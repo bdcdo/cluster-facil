@@ -28,6 +28,7 @@ dependencies = [
     "nltk",
     "matplotlib",
     "scipy",
+    "openpyxl", # Adicionado para suporte a .xlsx
 ]
 
 [project.urls]

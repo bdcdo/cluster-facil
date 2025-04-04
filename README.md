@@ -84,7 +84,6 @@ Para os curiosos, o Cluster Fácil segue estes passos principais:
 
 Temos planos para continuar melhorando o Cluster Fácil! Aqui estão algumas ideias e funcionalidades que gostaríamos de adicionar no futuro:
 
-*   **Entrada de Dados Aprimorada:** Permitir carregar dados diretamente de uma planilha específica dentro de um arquivo Excel (`.xlsx`).
 *   **Gerenciamento de Rodadas:** Identificar rodadas de clusterização anteriores no DataFrame e permitir ao usuário sobreescrevê-las se desejar.
 *   **Feedback de Erros:** Melhorar o feedback ao usuário caso ocorra erro apenas no salvamento dos arquivos de resultado (CSV/Excel).
 *   **Sugestão de K:** Integrar uma ferramenta (como `kneed`) para analisar o gráfico do cotovelo e *sugerir* um número de clusters (K) ideal, auxiliando usuários iniciantes.
