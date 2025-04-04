@@ -108,7 +108,6 @@ class ClusterFacil():
         logging.info(f"Iniciando preparação com a coluna '{coluna_textos}' e limite K={limite_k}.")
 
         validar_coluna_existe(self.df, coluna_textos)
-        # Chama a validação genérica diretamente
         validar_inteiro_positivo('limite_k', limite_k)
         validar_tipo_coluna_texto(self.df, coluna_textos)
 
@@ -159,7 +158,6 @@ class ClusterFacil():
         self.df[nome_coluna_cluster] = cluster_labels
         logging.info(f"Coluna '{nome_coluna_cluster}' adicionada ao DataFrame.")
 
-        # Armazena informações da última rodada
         self._ultimo_num_clusters = num_clusters
         self._ultima_coluna_cluster = nome_coluna_cluster
 
@@ -193,7 +191,6 @@ class ClusterFacil():
              logging.error(f"Não é possível salvar: {e}")
              return {'csv_salvo': False, 'excel_salvo': False}
 
-        # Preparar caminhos de saída usando a função de utils.py
         try:
             caminhos = preparar_caminhos_saida(diretorio_saida, prefixo_saida, rodada_a_salvar)
             nome_csv = caminhos['caminho_csv']
@@ -211,7 +208,6 @@ class ClusterFacil():
         return status_salvamento
 
     # --- MÉTODO DE CONVENIÊNCIA ---
-
     def finaliza(self, num_clusters: int, prefixo_saida: str = '', diretorio_saida: Optional[str] = None) -> dict[str, bool]:
         """
         Método de conveniência que executa a clusterização e depois salva os resultados.
