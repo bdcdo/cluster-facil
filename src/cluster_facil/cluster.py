@@ -3,10 +3,10 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import KMeans
 from nltk.corpus import stopwords
 import matplotlib.pyplot as plt
-from typing import Optional, List, Union # Adicionado Union
+from typing import Optional, List, Union
 from scipy.sparse import csr_matrix
 import logging
-import os # Adicionado os
+import os
 
 # Configuração básica de logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -69,11 +69,12 @@ class ClusterFacil():
         else:
             raise TypeError("A entrada deve ser um DataFrame do Pandas ou o caminho (string) para um arquivo.")
 
-        self.rodada_clusterizacao: int = 1 # Inicializa o contador da rodada
+        self.rodada_clusterizacao: int = 1
         self.coluna_textos: Optional[str] = None
         self.X: Optional[csr_matrix] = None
         self.inercias: Optional[List[float]] = None
-        # Logging movido para dentro das condições if/elif
+        self._ultimo_num_clusters: Optional[int] = None # Para rastrear K da última rodada
+        self._ultima_coluna_cluster: Optional[str] = None # Para rastrear nome da coluna da última rodada
 
 
     def _carregar_dados_de_arquivo(self, caminho_arquivo: str) -> pd.DataFrame:
@@ -139,7 +140,6 @@ class ClusterFacil():
             logging.error(f"Erro ao ler o arquivo {caminho_arquivo} (formato {extensao}): {e}")
             # Pode ser útil levantar um erro mais específico ou apenas o genérico
             raise ValueError(f"Erro ao processar o arquivo {caminho_arquivo}: {e}")
-
 
     def preparar(self, coluna_textos: str, limite_k: int = 10, n_init = 1) -> None:
         """
@@ -209,7 +209,6 @@ class ClusterFacil():
                  logging.warning(f"n_init ({n_init}) deve ser positivo. Usando n_init=1.")
                  current_n_init = 1
 
-
             kmeans = KMeans(n_clusters=k, random_state=42, n_init=current_n_init)
             kmeans.fit(self.X)
             self.inercias.append(kmeans.inertia_)
@@ -240,20 +239,30 @@ class ClusterFacil():
             logging.info(f"DataFrame salvo com sucesso em '{nome_arquivo}'.")
         except Exception as e:
             logging.error(f"Falha ao salvar o arquivo CSV '{nome_arquivo}': {e}")
+            return False # Retorna False em caso de falha
+        return True # Retorna True se chegou aqui (sucesso)
 
-    def _salvar_amostras_excel(self, nome_arquivo: str, nome_coluna_cluster: str, num_clusters: int) -> None:
+    def _salvar_amostras_excel(self, nome_arquivo: str, nome_coluna_cluster: str, num_clusters: int) -> bool:
         """
         Método interno para gerar e salvar amostras (até 10 por cluster) em Excel.
 
+        Retorna True se o salvamento for bem-sucedido, False caso contrário.
         Em caso de erro, registra a falha no log, mas não levanta exceção.
         """
         logging.info(f"Tentando gerar e salvar amostras (até 10 por cluster) em '{nome_arquivo}'...")
         resultados = pd.DataFrame()
         if nome_coluna_cluster not in self.df.columns:
             logging.error(f"Coluna de cluster '{nome_coluna_cluster}' não encontrada no DataFrame ao tentar salvar amostras.")
-            return
+            return False # Falha se a coluna não existe
 
         try:
+            # Tenta importar openpyxl ANTES de gerar os resultados, pois será necessário para salvar
+            try:
+                import openpyxl
+            except ImportError:
+                 logging.error("A biblioteca 'openpyxl' é necessária para salvar arquivos .xlsx. Instale-a com 'pip install openpyxl'")
+                 return False # Falha se a dependência está ausente
+
             # Garante que num_clusters não seja maior que o número real de clusters gerados
             actual_clusters = self.df[nome_coluna_cluster].unique()
             valid_num_clusters = len(actual_clusters)
@@ -278,31 +287,32 @@ class ClusterFacil():
                 logging.info(f"Amostras salvas com sucesso em '{nome_arquivo}'.")
             else:
                  logging.warning("Nenhuma amostra foi gerada (todos os clusters estavam vazios ou não foram encontrados?). Arquivo Excel não será criado.")
+                 # Consideramos isso um sucesso, pois não houve erro de IO.
+                 return True
 
         except Exception as e:
             logging.error(f"Falha ao gerar ou salvar o arquivo Excel de amostras '{nome_arquivo}': {e}")
+            return False # Falha em caso de exceção
+        return True # Retorna True se tudo correu bem (incluindo caso sem amostras)
 
-    def finaliza(self, num_clusters: int, prefixo_saida: str = '') -> None:
+    def clusterizar(self, num_clusters: int) -> str:
         """
-        Executa a clusterização K-Means, adiciona a coluna de clusters ao DataFrame
-        e tenta salvar os resultados (DataFrame completo em CSV e amostras em Excel).
-
-        O K-Means final é executado com n_init='auto' (padrão moderno que substitui 10).
-        Erros durante o salvamento dos arquivos são registrados no log, mas não
-        interrompem a execução do método.
-        Incrementa o contador `self.rodada_clusterizacao` ao final.
+        Executa a clusterização K-Means e adiciona a coluna de clusters ao DataFrame.
 
         Args:
             num_clusters (int): O número de clusters (K) a ser usado.
-            prefixo_saida (str, optional): Prefixo para os nomes dos arquivos de saída. Default ''.
+
+        Returns:
+            str: O nome da coluna de cluster criada (ex: 'cluster_1').
 
         Raises:
-            RuntimeError: Se `preparar` não foi executado antes (self.X ou self.coluna_textos são None) ou se não há dados (self.X.shape[0] == 0).
-            ValueError: Se `num_clusters` for inválido (não positivo ou maior que o número de amostras).
+            RuntimeError: Se `preparar` não foi executado antes ou se não há dados.
+            ValueError: Se `num_clusters` for inválido.
+            Exception: Outros erros durante a execução do K-Means.
         """
-        logging.info(f"Iniciando finalização com K={num_clusters} e prefixo='{prefixo_saida}'.")
+        logging.info(f"Iniciando clusterização com K={num_clusters} para a rodada {self.rodada_clusterizacao}.")
         if self.X is None or self.coluna_textos is None:
-            raise RuntimeError("O método 'preparar' deve ser executado antes de 'finaliza'.")
+            raise RuntimeError("O método 'preparar' deve ser executado antes de 'clusterizar'.")
         if self.X.shape[0] == 0:
              raise RuntimeError("Não há dados para clusterizar. Execute 'preparar' com um DataFrame que contenha dados.")
         if not isinstance(num_clusters, int) or num_clusters <= 0:
@@ -311,26 +321,98 @@ class ClusterFacil():
              raise ValueError(f"O número de clusters ({num_clusters}) não pode ser maior que o número de amostras ({self.X.shape[0]}).")
 
         logging.info(f"Executando K-Means com {num_clusters} clusters...")
-        # Usa n_init='auto' que é o padrão recomendado nas versões mais recentes do scikit-learn
         kmeans = KMeans(n_clusters=num_clusters, random_state=42, n_init='auto')
         try:
             cluster_labels = kmeans.fit_predict(self.X)
         except Exception as e:
              logging.error(f"Erro durante a execução do K-Means: {e}")
-             raise # Re-levanta a exceção para indicar falha na clusterização
+             raise # Re-levanta a exceção para indicar falha crítica
 
         nome_coluna_cluster = f'cluster_{self.rodada_clusterizacao}'
         self.df[nome_coluna_cluster] = cluster_labels
         logging.info(f"Coluna '{nome_coluna_cluster}' adicionada ao DataFrame.")
 
-        # Definir nomes de arquivo (garantindo que o prefixo funcione bem)
+        # Armazena informações da última rodada
+        self._ultimo_num_clusters = num_clusters
+        self._ultima_coluna_cluster = nome_coluna_cluster
+
+        self.rodada_clusterizacao += 1 # Incrementa a rodada APÓS sucesso
+        logging.info(f"Clusterização da rodada {self.rodada_clusterizacao - 1} concluída.")
+        return nome_coluna_cluster
+
+    def salvar(self, prefixo_saida: str = '') -> dict[str, bool]:
+        """
+        Salva os resultados da última clusterização realizada (DataFrame completo em CSV e amostras em Excel).
+
+        Args:
+            prefixo_saida (str, optional): Prefixo para os nomes dos arquivos de saída. Default ''.
+
+        Returns:
+            dict[str, bool]: Um dicionário indicando o sucesso do salvamento de cada arquivo.
+                             Ex: {'csv_salvo': True, 'excel_salvo': False}
+        """
+        logging.info("Tentando salvar resultados da última clusterização...")
+
+        if self._ultima_coluna_cluster is None or self._ultimo_num_clusters is None:
+            logging.error("Nenhuma clusterização foi realizada ainda. Execute o método 'clusterizar' primeiro.")
+            return {'csv_salvo': False, 'excel_salvo': False}
+
+        # Usa a informação da última rodada (rodada_clusterizacao já foi incrementada)
+        rodada_a_salvar = self.rodada_clusterizacao - 1
+        nome_coluna_cluster = self._ultima_coluna_cluster
+        num_clusters = self._ultimo_num_clusters
+
+        if nome_coluna_cluster not in self.df.columns:
+             # Verificação de segurança, embora improvável se a lógica estiver correta
+             logging.error(f"Erro interno: Coluna '{nome_coluna_cluster}' da última clusterização não encontrada.")
+             return {'csv_salvo': False, 'excel_salvo': False}
+
+        # Definir nomes de arquivo
         prefixo_fmt = f"{prefixo_saida}_" if prefixo_saida else ""
-        nome_csv = f"{prefixo_fmt}clusters_{self.rodada_clusterizacao}.csv"
-        nome_excel = f"{prefixo_fmt}amostras_por_cluster_{self.rodada_clusterizacao}.xlsx"
+        nome_csv = f"{prefixo_fmt}clusters_{rodada_a_salvar}.csv"
+        nome_excel = f"{prefixo_fmt}amostras_por_cluster_{rodada_a_salvar}.xlsx"
 
-        # Chamar métodos internos para salvar
-        self._salvar_csv(nome_csv)
-        self._salvar_amostras_excel(nome_excel, nome_coluna_cluster, num_clusters)
+        # Chamar métodos internos para salvar e coletar status
+        sucesso_csv = self._salvar_csv(nome_csv)
+        sucesso_excel = self._salvar_amostras_excel(nome_excel, nome_coluna_cluster, num_clusters)
 
-        logging.info(f"Finalização concluída para a rodada {self.rodada_clusterizacao}.")
-        self.rodada_clusterizacao += 1
+        if not sucesso_csv:
+            logging.warning(f"Houve um problema ao salvar o arquivo CSV: {nome_csv}. Verifique os logs.")
+        if not sucesso_excel:
+            logging.warning(f"Houve um problema ao salvar o arquivo Excel de amostras: {nome_excel}. Verifique os logs.")
+
+        status_salvamento = {'csv_salvo': sucesso_csv, 'excel_salvo': sucesso_excel}
+        logging.info(f"Tentativa de salvamento da rodada {rodada_a_salvar} concluída. Status: {status_salvamento}")
+        return status_salvamento
+
+    # --- MÉTODO DE CONVENIÊNCIA ---
+
+    def finaliza(self, num_clusters: int, prefixo_saida: str = '') -> dict[str, bool]:
+        """
+        Método de conveniência que executa a clusterização e depois salva os resultados.
+
+        Equivalente a chamar `clusterizar()` seguido por `salvar()`.
+        Erros durante o salvamento dos arquivos são registrados no log e indicados no
+        retorno, mas não interrompem a execução.
+
+        Args:
+            num_clusters (int): O número de clusters (K) a ser usado.
+            prefixo_saida (str, optional): Prefixo para os nomes dos arquivos de saída. Default ''.
+
+        Returns:
+            dict[str, bool]: O status do salvamento dos arquivos (ver método `salvar`).
+
+        Raises:
+            RuntimeError: Se `preparar` não foi executado antes ou se não há dados.
+            ValueError: Se `num_clusters` for inválido.
+            Exception: Outros erros durante a execução do K-Means (vindos de `clusterizar`).
+        """
+        logging.info(f"Executando 'finaliza' (clusterizar e salvar) com K={num_clusters} e prefixo='{prefixo_saida}'.")
+        # 1. Clusterizar (pode levantar exceção)
+        self.clusterizar(num_clusters)
+
+        # 2. Salvar (não levanta exceção por falha de IO, apenas loga e retorna status)
+        status_salvamento = self.salvar(prefixo_saida)
+
+        logging.info(f"'Finaliza' concluído para a rodada {self.rodada_clusterizacao - 1}. Status de salvamento: {status_salvamento}")
+        return status_salvamento # Retorna o status do salvamento

@@ -86,10 +86,12 @@ Temos planos para continuar melhorando o Cluster Fácil! Aqui estão algumas ide
 
 *   **Gerenciamento de Rodadas:** Identificar rodadas de clusterização anteriores no DataFrame e permitir ao usuário sobreescrevê-las se desejar.
 *   **Feedback de Erros:** Melhorar o feedback ao usuário caso ocorra erro apenas no salvamento dos arquivos de resultado (CSV/Excel).
-*   **Sugestão de K:** Integrar uma ferramenta (como `kneed`) para analisar o gráfico do cotovelo e *sugerir* um número de clusters (K) ideal, auxiliando usuários iniciantes.
 *   **Diretório de Saída:** Permitir configurar uma pasta específica para salvar todos os arquivos gerados pela biblioteca.
+*   **Sugestão de K:** Integrar uma ferramenta (como `kneed`) para analisar o gráfico do cotovelo e *sugerir* um número de clusters (K) ideal, auxiliando usuários iniciantes.
 *   **Interpretação dos Clusters:** Adicionar uma funcionalidade para mostrar as palavras/termos mais importantes de cada cluster, ajudando a entender o "tema" de cada grupo.
 *   **Biblioteca para testes:** Criar uma biblioteca opcional com um conjunto de decisões judiciais para a realização de testes.
+*   **Salvar Rodadas Específicas:** Permitir que a função `salvar` receba opcionalmente o nome de uma coluna de cluster específica para salvar resultados de rodadas anteriores.
+*   **Melhoria Feedback NLTK:** Melhorar o tratamento de falha no download de stopwords do NLTK (ex: feedback ao usuário mais claro).
 
 Se você tem outras ideias ou gostaria de ajudar com alguma dessas, veja a seção de Contribuição!
 
