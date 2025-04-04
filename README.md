@@ -2,11 +2,11 @@
 
 ![Python Version](https://img.shields.io/badge/python-3.8+-blue.svg)
 
-Uma biblioteca Python intuitiva para realizar clusterização de documentos textuais. Simplifica o processo desde a preparação dos dados e análise do número ideal de clusters (método do cotovelo) até a aplicação do algoritmo e exportação dos resultados. Ideal para agrupar grandes volumes de texto, como decisões judiciais, artigos ou comentários, de forma eficiente e com poucas linhas de código.
+Uma biblioteca Python intuitiva para realizar clusterização de documentos textuais. Simplifica o processo desde a preparação dos dados e análise do número ideal de clusters até a aplicação do algoritmo e exportação dos resultados. Ideal para agrupar grandes volumes de texto, como decisões judiciais, artigos ou comentários, de forma eficiente e com poucas linhas de código.
 
 ## Por que Cluster Fácil?
 
-Cansado de escrever o mesmo código repetidamente para agrupar textos? Cluster Fácil automatiza as etapas mais comuns de pré-processamento e clusterização, permitindo que você foque na análise dos resultados e na interpretação dos grupos formados. Com uma interface simples, mesmo quem está começando pode realizar análises complexas rapidamente.
+Cluster Fácil automatiza as etapas mais comuns de pré-processamento e clusterização, permitindo que você foque na análise dos resultados e na interpretação dos grupos formados. Com uma interface simples, mesmo quem está começando pode realizar análises complexas rapidamente.
 
 ## Instalação
 
@@ -79,6 +79,20 @@ Para os curiosos, o Cluster Fácil segue estes passos principais:
 3.  **Método do Cotovelo:** Para ajudar na escolha do número ideal de clusters (K), o algoritmo K-Means é executado para diferentes valores de K (de 1 até `limite_k`). A "inércia" (soma das distâncias quadráticas dentro de cada cluster) é calculada para cada K. O gráfico da inércia vs. K geralmente mostra um "cotovelo", indicando um ponto onde adicionar mais clusters não traz uma melhoria significativa na separação.
 4.  **Clusterização K-Means:** Após você escolher o número de clusters (K) com base no gráfico do cotovelo, o algoritmo K-Means é aplicado final para agrupar os documentos nos K clusters definidos.
 5.  **Resultados:** Uma nova coluna indicando o cluster de cada documento é adicionada ao seu DataFrame original. Opcionalmente, arquivos CSV e Excel com os resultados e amostras são salvos.
+
+## Roadmap Futuro 🗺️
+
+Temos planos para continuar melhorando o Cluster Fácil! Aqui estão algumas ideias e funcionalidades que gostaríamos de adicionar no futuro:
+
+*   **Entrada de Dados Aprimorada:** Permitir carregar dados diretamente de uma planilha específica dentro de um arquivo Excel (`.xlsx`).
+*   **Gerenciamento de Rodadas:** Identificar rodadas de clusterização anteriores no DataFrame e permitir ao usuário sobreescrevê-las se desejar.
+*   **Feedback de Erros:** Melhorar o feedback ao usuário caso ocorra erro apenas no salvamento dos arquivos de resultado (CSV/Excel).
+*   **Sugestão de K:** Integrar uma ferramenta (como `kneed`) para analisar o gráfico do cotovelo e *sugerir* um número de clusters (K) ideal, auxiliando usuários iniciantes.
+*   **Diretório de Saída:** Permitir configurar uma pasta específica para salvar todos os arquivos gerados pela biblioteca.
+*   **Interpretação dos Clusters:** Adicionar uma funcionalidade para mostrar as palavras/termos mais importantes de cada cluster, ajudando a entender o "tema" de cada grupo.
+*   **Biblioteca para testes:** Criar uma biblioteca opcional com um conjunto de decisões judiciais para a realização de testes.
+
+Se você tem outras ideias ou gostaria de ajudar com alguma dessas, veja a seção de Contribuição!
 
 ## Contribuição
 
