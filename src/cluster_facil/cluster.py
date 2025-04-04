@@ -7,13 +7,12 @@ import logging
 import os
 import logging
 
-# Importações de utils e validations
 from .utils import (
     stop_words_pt,
     calcular_e_plotar_cotovelo,
     salvar_dataframe_csv,
     salvar_amostras_excel,
-    preparar_caminhos_saida # Adicionada
+    preparar_caminhos_saida
 )
 from .validations import (
     validar_entrada_inicial,
@@ -73,10 +72,9 @@ class ClusterFacil():
         if isinstance(entrada, pd.DataFrame):
             self.df: pd.DataFrame = entrada.copy() # Copiar para evitar modificar o original inesperadamente
             logging.info("ClusterFacil inicializado com DataFrame existente.")
-        elif isinstance(entrada, str): # Sabemos que é string por causa da validação
-            self.df: pd.DataFrame = self._carregar_dados_de_arquivo(entrada, aba=aba) # Passa o parâmetro aba
+        elif isinstance(entrada, str):
+            self.df: pd.DataFrame = self._carregar_dados_de_arquivo(entrada, aba=aba)
             logging.info(f"ClusterFacil inicializado com dados do arquivo: {entrada}" + (f" (aba: {aba})" if aba else ""))
-        # O else não é mais necessário pois validar_entrada_inicial já trata o erro
 
         self.rodada_clusterizacao: int = 1
         self.coluna_textos: Optional[str] = None
@@ -106,35 +104,29 @@ class ClusterFacil():
             Exception: Para outros erros inesperados durante o carregamento.
         """
         logging.info(f"Tentando carregar dados do arquivo: {caminho_arquivo}")
-        # Validações movidas para validations.py
         validar_arquivo_existe(caminho_arquivo)
 
         _, extensao = os.path.splitext(caminho_arquivo)
         extensao = extensao.lower()
 
-        # Valida formato e dependências antes de tentar ler
         validar_formato_suportado(extensao)
-        validar_dependencia_leitura(extensao) # Verifica openpyxl/pyarrow
+        validar_dependencia_leitura(extensao)
 
-        try:
+        # As dependências já foram validadas, então podemos ler diretamente
+        try: 
             if extensao == '.csv':
                 df = pd.read_csv(caminho_arquivo)
             elif extensao == '.xlsx':
-                # A dependência já foi validada, podemos ler diretamente
+                
                 df = pd.read_excel(caminho_arquivo, sheet_name=aba)
             elif extensao == '.parquet':
-                # A dependência já foi validada
                 df = pd.read_parquet(caminho_arquivo)
             elif extensao == '.json':
                 df = pd.read_json(caminho_arquivo)
-            # O else não é mais necessário devido a validar_formato_suportado
 
             logging.info(f"Arquivo {caminho_arquivo} carregado com sucesso. Shape: {df.shape}")
             return df
-        # FileNotFoundError já é tratado por validar_arquivo_existe
-        # ImportError já é tratado por validar_dependencia_leitura
         except Exception as e:
-            # Captura outros erros de leitura (ex: arquivo corrompido, JSON mal formatado)
             logging.error(f"Erro ao ler o arquivo {caminho_arquivo} (formato {extensao}): {e}")
             raise ValueError(f"Erro ao processar o arquivo {caminho_arquivo}: {e}")
 
@@ -159,29 +151,25 @@ class ClusterFacil():
             TypeError: Se a coluna especificada não contiver dados textuais (ou que possam ser convertidos para string).
         """
         logging.info(f"Iniciando preparação com a coluna '{coluna_textos}' e limite K={limite_k}.")
-        # Validações movidas para validations.py
+
         validar_coluna_existe(self.df, coluna_textos)
         validar_parametro_limite_k(limite_k)
-        validar_tipo_coluna_texto(self.df, coluna_textos) # Verifica se a coluna pode ser processada como texto
+        validar_tipo_coluna_texto(self.df, coluna_textos)
 
         self.coluna_textos = coluna_textos
 
-        # Processamento do texto (agora que sabemos que é válido)
         textos_processados = self.df[self.coluna_textos].fillna('').astype(str).str.lower()
 
         logging.info("Calculando TF-IDF...")
-        # Usa stop_words_pt importado de utils.py
         vectorizer = TfidfVectorizer(stop_words=stop_words_pt)
         self.X = vectorizer.fit_transform(textos_processados)
         logging.info(f"Matriz TF-IDF calculada com shape: {self.X.shape}")
 
-        # Chama a função auxiliar para calcular inércias e plotar o gráfico
         self.inercias = calcular_e_plotar_cotovelo(self.X, limite_k, n_init)
 
         if self.inercias is not None:
              logging.info("Preparação concluída. Analise o gráfico do cotovelo para escolher o número de clusters.")
         else:
-             # A função auxiliar já logou o erro/aviso
              logging.info("Preparação concluída (sem dados para o método do cotovelo).")
 
     def clusterizar(self, num_clusters: int) -> str:
@@ -200,9 +188,8 @@ class ClusterFacil():
             Exception: Outros erros durante a execução do K-Means.
         """
         logging.info(f"Iniciando clusterização com K={num_clusters} para a rodada {self.rodada_clusterizacao}.")
-        # Validações movidas para validations.py
-        validar_estado_preparado(self) # Verifica se 'preparar' foi chamado e se X existe e tem dados
-        validar_parametro_num_clusters(num_clusters, self.X.shape[0]) # Valida o K
+        validar_estado_preparado(self)
+        validar_parametro_num_clusters(num_clusters, self.X.shape[0])
 
         logging.info(f"Executando K-Means com {num_clusters} clusters...")
         kmeans = KMeans(n_clusters=num_clusters, random_state=42, n_init='auto')
@@ -239,10 +226,8 @@ class ClusterFacil():
         """
         logging.info("Tentando salvar resultados da última clusterização...")
 
-        # Validações movidas para validations.py
         try:
-            validar_estado_clusterizado(self) # Verifica se clusterizar foi chamado
-            # Acessa os atributos após garantir que existem
+            validar_estado_clusterizado(self)
             rodada_a_salvar = self.rodada_clusterizacao - 1
             nome_coluna_cluster = self._ultima_coluna_cluster
             num_clusters = self._ultimo_num_clusters
@@ -262,11 +247,8 @@ class ClusterFacil():
             logging.error(f"Falha ao preparar diretório/caminhos de saída: {e}")
             return {'csv_salvo': False, 'excel_salvo': False}
 
-        # Chamar funções de utils.py para salvar
         sucesso_csv = salvar_dataframe_csv(self.df, nome_csv)
         sucesso_excel = salvar_amostras_excel(self.df, nome_coluna_cluster, num_clusters, nome_excel)
-
-        # Logs de warning já estão nas funções de salvar em utils.py
 
         status_salvamento = {'csv_salvo': sucesso_csv, 'excel_salvo': sucesso_excel}
         logging.info(f"Tentativa de salvamento da rodada {rodada_a_salvar} concluída. Status: {status_salvamento}")
@@ -297,6 +279,7 @@ class ClusterFacil():
             Exception: Outros erros durante a execução do K-Means (vindos de `clusterizar`).
         """
         logging.info(f"Executando 'finaliza' (clusterizar e salvar) com K={num_clusters} e prefixo='{prefixo_saida}'.")
+        
         # 1. Clusterizar (pode levantar exceção)
         self.clusterizar(num_clusters)
 
@@ -304,4 +287,4 @@ class ClusterFacil():
         status_salvamento = self.salvar(prefixo_saida=prefixo_saida, diretorio_saida=diretorio_saida)
 
         logging.info(f"'Finaliza' concluído para a rodada {self.rodada_clusterizacao - 1}. Status de salvamento: {status_salvamento}")
-        return status_salvamento # Retorna o status do salvamento
+        return status_salvamento
