@@ -5,8 +5,29 @@ from typing import Optional, List, Union
 from scipy.sparse import csr_matrix
 import logging
 import os
+import logging
 
-from .utils import stop_words_pt, calcular_e_plotar_cotovelo, salvar_dataframe_csv, salvar_amostras_excel
+# Importações de utils e validations
+from .utils import (
+    stop_words_pt,
+    calcular_e_plotar_cotovelo,
+    salvar_dataframe_csv,
+    salvar_amostras_excel,
+    preparar_caminhos_saida # Adicionada
+)
+from .validations import (
+    validar_entrada_inicial,
+    validar_arquivo_existe,
+    validar_dependencia_leitura,
+    validar_formato_suportado,
+    validar_coluna_existe,
+    validar_parametro_limite_k,
+    validar_tipo_coluna_texto,
+    validar_estado_preparado,
+    validar_parametro_num_clusters,
+    validar_estado_clusterizado,
+    validar_coluna_cluster_existe
+)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -46,14 +67,16 @@ class ClusterFacil():
             ImportError: Se uma dependência necessária (ex: openpyxl, pyarrow) não estiver instalada.
             ValueError: Se o formato do arquivo não for suportado ou houver erro na leitura.
         """
+        # Validação movida para validations.py
+        validar_entrada_inicial(entrada)
+
         if isinstance(entrada, pd.DataFrame):
             self.df: pd.DataFrame = entrada.copy() # Copiar para evitar modificar o original inesperadamente
             logging.info("ClusterFacil inicializado com DataFrame existente.")
-        elif isinstance(entrada, str):
+        elif isinstance(entrada, str): # Sabemos que é string por causa da validação
             self.df: pd.DataFrame = self._carregar_dados_de_arquivo(entrada, aba=aba) # Passa o parâmetro aba
             logging.info(f"ClusterFacil inicializado com dados do arquivo: {entrada}" + (f" (aba: {aba})" if aba else ""))
-        else:
-            raise TypeError("A entrada deve ser um DataFrame do Pandas ou o caminho (string) para um arquivo.")
+        # O else não é mais necessário pois validar_entrada_inicial já trata o erro
 
         self.rodada_clusterizacao: int = 1
         self.coluna_textos: Optional[str] = None
@@ -83,50 +106,36 @@ class ClusterFacil():
             Exception: Para outros erros inesperados durante o carregamento.
         """
         logging.info(f"Tentando carregar dados do arquivo: {caminho_arquivo}")
-        if not os.path.exists(caminho_arquivo):
-            logging.error(f"Arquivo não encontrado: {caminho_arquivo}")
-            raise FileNotFoundError(f"Arquivo não encontrado: {caminho_arquivo}")
+        # Validações movidas para validations.py
+        validar_arquivo_existe(caminho_arquivo)
 
         _, extensao = os.path.splitext(caminho_arquivo)
         extensao = extensao.lower()
+
+        # Valida formato e dependências antes de tentar ler
+        validar_formato_suportado(extensao)
+        validar_dependencia_leitura(extensao) # Verifica openpyxl/pyarrow
 
         try:
             if extensao == '.csv':
                 df = pd.read_csv(caminho_arquivo)
             elif extensao == '.xlsx':
-                # Tenta importar openpyxl para dar um erro mais informativo se faltar
-                try:
-                    import openpyxl
-                except ImportError:
-                     logging.error("A biblioteca 'openpyxl' é necessária para ler arquivos .xlsx. Instale-a com 'pip install openpyxl'")
-                     raise ImportError("A biblioteca 'openpyxl' é necessária para ler arquivos .xlsx.")
-                # Usa o parâmetro 'aba' (sheet_name) ao ler o Excel
+                # A dependência já foi validada, podemos ler diretamente
                 df = pd.read_excel(caminho_arquivo, sheet_name=aba)
             elif extensao == '.parquet':
-                 # Tenta importar pyarrow para dar um erro mais informativo se faltar
-                try:
-                    import pyarrow
-                except ImportError:
-                     logging.error("A biblioteca 'pyarrow' é necessária para ler arquivos .parquet. Instale-a com 'pip install pyarrow'")
-                     raise ImportError("A biblioteca 'pyarrow' é necessária para ler arquivos .parquet.")
+                # A dependência já foi validada
                 df = pd.read_parquet(caminho_arquivo)
             elif extensao == '.json':
                 df = pd.read_json(caminho_arquivo)
-            else:
-                logging.error(f"Formato de arquivo não suportado: {extensao}")
-                raise ValueError(f"Formato de arquivo não suportado: {extensao}. Suportados: .csv, .xlsx, .parquet, .json")
+            # O else não é mais necessário devido a validar_formato_suportado
 
             logging.info(f"Arquivo {caminho_arquivo} carregado com sucesso. Shape: {df.shape}")
             return df
-        except FileNotFoundError: # Redundante devido à verificação inicial, mas seguro
-             logging.error(f"Erro: Arquivo não encontrado ao tentar ler: {caminho_arquivo}")
-             raise
-        except ImportError as e: # Captura especificamente erros de importação de dependências
-             logging.error(f"Erro de importação ao tentar ler {caminho_arquivo}: {e}")
-             raise
+        # FileNotFoundError já é tratado por validar_arquivo_existe
+        # ImportError já é tratado por validar_dependencia_leitura
         except Exception as e:
+            # Captura outros erros de leitura (ex: arquivo corrompido, JSON mal formatado)
             logging.error(f"Erro ao ler o arquivo {caminho_arquivo} (formato {extensao}): {e}")
-            # Pode ser útil levantar um erro mais específico ou apenas o genérico
             raise ValueError(f"Erro ao processar o arquivo {caminho_arquivo}: {e}")
 
     def preparar(self, coluna_textos: str, limite_k: int = 10, n_init = 1) -> None:
@@ -150,18 +159,15 @@ class ClusterFacil():
             TypeError: Se a coluna especificada não contiver dados textuais (ou que possam ser convertidos para string).
         """
         logging.info(f"Iniciando preparação com a coluna '{coluna_textos}' e limite K={limite_k}.")
-        if coluna_textos not in self.df.columns:
-            raise KeyError(f"A coluna '{coluna_textos}' não foi encontrada no DataFrame.")
-        if not isinstance(limite_k, int) or limite_k <= 0:
-            raise ValueError("O argumento 'limite_k' deve ser um inteiro positivo.")
+        # Validações movidas para validations.py
+        validar_coluna_existe(self.df, coluna_textos)
+        validar_parametro_limite_k(limite_k)
+        validar_tipo_coluna_texto(self.df, coluna_textos) # Verifica se a coluna pode ser processada como texto
 
         self.coluna_textos = coluna_textos
 
-        try:
-            # Garante que a coluna seja string e preenche NaNs com string vazia antes do lower()
-            textos_processados = self.df[self.coluna_textos].fillna('').astype(str).str.lower()
-        except Exception as e:
-             raise TypeError(f"Erro ao processar a coluna '{coluna_textos}'. Verifique se ela contém texto. Erro original: {e}")
+        # Processamento do texto (agora que sabemos que é válido)
+        textos_processados = self.df[self.coluna_textos].fillna('').astype(str).str.lower()
 
         logging.info("Calculando TF-IDF...")
         # Usa stop_words_pt importado de utils.py
@@ -194,14 +200,9 @@ class ClusterFacil():
             Exception: Outros erros durante a execução do K-Means.
         """
         logging.info(f"Iniciando clusterização com K={num_clusters} para a rodada {self.rodada_clusterizacao}.")
-        if self.X is None or self.coluna_textos is None:
-            raise RuntimeError("O método 'preparar' deve ser executado antes de 'clusterizar'.")
-        if self.X.shape[0] == 0:
-             raise RuntimeError("Não há dados para clusterizar. Execute 'preparar' com um DataFrame que contenha dados.")
-        if not isinstance(num_clusters, int) or num_clusters <= 0:
-            raise ValueError("O argumento 'num_clusters' deve ser um inteiro positivo.")
-        if num_clusters > self.X.shape[0]:
-             raise ValueError(f"O número de clusters ({num_clusters}) não pode ser maior que o número de amostras ({self.X.shape[0]}).")
+        # Validações movidas para validations.py
+        validar_estado_preparado(self) # Verifica se 'preparar' foi chamado e se X existe e tem dados
+        validar_parametro_num_clusters(num_clusters, self.X.shape[0]) # Valida o K
 
         logging.info(f"Executando K-Means com {num_clusters} clusters...")
         kmeans = KMeans(n_clusters=num_clusters, random_state=42, n_init='auto')
@@ -238,54 +239,34 @@ class ClusterFacil():
         """
         logging.info("Tentando salvar resultados da última clusterização...")
 
-        if self._ultima_coluna_cluster is None or self._ultimo_num_clusters is None:
-            logging.error("Nenhuma clusterização foi realizada ainda. Execute o método 'clusterizar' primeiro.")
+        # Validações movidas para validations.py
+        try:
+            validar_estado_clusterizado(self) # Verifica se clusterizar foi chamado
+            # Acessa os atributos após garantir que existem
+            rodada_a_salvar = self.rodada_clusterizacao - 1
+            nome_coluna_cluster = self._ultima_coluna_cluster
+            num_clusters = self._ultimo_num_clusters
+            validar_coluna_cluster_existe(self.df, nome_coluna_cluster) # Verificação de segurança
+        except (RuntimeError, KeyError) as e:
+             # Se a validação falhar (RuntimeError de estado, KeyError de coluna), retorna falha
+             logging.error(f"Não é possível salvar: {e}")
+             return {'csv_salvo': False, 'excel_salvo': False}
+
+        # Preparar caminhos de saída usando a função de utils.py
+        try:
+            caminhos = preparar_caminhos_saida(diretorio_saida, prefixo_saida, rodada_a_salvar)
+            nome_csv = caminhos['caminho_csv']
+            nome_excel = caminhos['caminho_excel']
+        except OSError as e:
+            # Se preparar_caminhos_saida falhar (ex: problema de permissão), retorna falha
+            logging.error(f"Falha ao preparar diretório/caminhos de saída: {e}")
             return {'csv_salvo': False, 'excel_salvo': False}
-
-        # Usa a informação da última rodada (rodada_clusterizacao já foi incrementada)
-        rodada_a_salvar = self.rodada_clusterizacao - 1
-        nome_coluna_cluster = self._ultima_coluna_cluster
-        num_clusters = self._ultimo_num_clusters
-
-        if nome_coluna_cluster not in self.df.columns:
-            # Verificação de segurança, embora improvável se a lógica estiver correta
-            logging.error(f"Erro interno: Coluna '{nome_coluna_cluster}' da última clusterização não encontrada.")
-            return {'csv_salvo': False, 'excel_salvo': False}
-
-         # Definir nomes de arquivo base
-        prefixo_fmt = f"{prefixo_saida}_" if prefixo_saida else ""
-        nome_base_csv = f"{prefixo_fmt}clusters_{rodada_a_salvar}.csv"
-        nome_base_excel = f"{prefixo_fmt}amostras_por_cluster_{rodada_a_salvar}.xlsx"
-
-        # Construir caminho final usando o parâmetro diretorio_saida
-        if diretorio_saida:
-            try:
-                os.makedirs(diretorio_saida, exist_ok=True)
-                logging.info(f"Diretório de saída '{diretorio_saida}' verificado/criado.")
-                nome_csv = os.path.join(diretorio_saida, nome_base_csv)
-                nome_excel = os.path.join(diretorio_saida, nome_base_excel)
-            except OSError as e:
-                logging.error(f"Não foi possível criar ou acessar o diretório de saída '{diretorio_saida}': {e}. Salvando no diretório atual.")
-                # Fallback para o diretório atual em caso de erro
-                nome_csv = nome_base_csv
-                nome_excel = nome_base_excel
-        else:
-            # Se nenhum diretório foi especificado, usa o diretório atual
-            nome_csv = nome_base_csv
-            nome_excel = nome_base_excel
-
-        logging.info(f"Caminho final para CSV: {nome_csv}")
-        logging.info(f"Caminho final para Excel: {nome_excel}")
 
         # Chamar funções de utils.py para salvar
         sucesso_csv = salvar_dataframe_csv(self.df, nome_csv)
         sucesso_excel = salvar_amostras_excel(self.df, nome_coluna_cluster, num_clusters, nome_excel)
 
-        # A lógica de warning já está dentro das funções em utils.py, mas podemos manter aqui se quisermos um log adicional
-        if not sucesso_csv:
-            logging.warning(f"Salvamento do CSV ({nome_csv}) falhou (ver logs anteriores).")
-        if not sucesso_excel:
-            logging.warning(f"Houve um problema ao salvar o arquivo Excel de amostras: {nome_excel}. Verifique os logs.")
+        # Logs de warning já estão nas funções de salvar em utils.py
 
         status_salvamento = {'csv_salvo': sucesso_csv, 'excel_salvo': sucesso_excel}
         logging.info(f"Tentativa de salvamento da rodada {rodada_a_salvar} concluída. Status: {status_salvamento}")

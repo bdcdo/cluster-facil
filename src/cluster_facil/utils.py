@@ -37,9 +37,56 @@ except Exception as e:
         f"Erro inesperado ao carregar stopwords: {e}. "
         "As stopwords em português não serão usadas, o que pode afetar a qualidade da clusterização."
     )
-    # Mantém stop_words_pt como lista vazia
+# Mantém stop_words_pt como lista vazia
+
 
 # --- Funções Auxiliares ---
+
+def preparar_caminhos_saida(diretorio_saida: Optional[str], prefixo_saida: str, rodada_clusterizacao: int) -> dict[str, str]:
+    """
+    Prepara os caminhos completos para os arquivos de saída CSV e Excel.
+
+    Cria o diretório de saída se ele não existir.
+
+    Args:
+        diretorio_saida (Optional[str]): Caminho da pasta onde salvar os arquivos. Se None, usa o diretório atual.
+        prefixo_saida (str): Prefixo para os nomes dos arquivos de saída.
+        rodada_clusterizacao (int): Número da rodada de clusterização atual (usado no nome do arquivo).
+
+    Returns:
+        dict[str, str]: Dicionário contendo 'caminho_csv' e 'caminho_excel' com os caminhos completos.
+
+    Raises:
+        OSError: Se houver um erro ao tentar criar o diretório de saída.
+    """
+    logging.info(f"Preparando caminhos de saída para a rodada {rodada_clusterizacao} com prefixo '{prefixo_saida}' e diretório '{diretorio_saida or '.'}'")
+
+    # Definir nomes de arquivo base
+    prefixo_fmt = f"{prefixo_saida}_" if prefixo_saida else ""
+    nome_base_csv = f"{prefixo_fmt}clusters_{rodada_clusterizacao}.csv"
+    nome_base_excel = f"{prefixo_fmt}amostras_por_cluster_{rodada_clusterizacao}.xlsx"
+
+    # Construir caminho final usando o parâmetro diretorio_saida
+    if diretorio_saida:
+        try:
+            os.makedirs(diretorio_saida, exist_ok=True)
+            logging.info(f"Diretório de saída '{diretorio_saida}' verificado/criado.")
+            caminho_csv = os.path.join(diretorio_saida, nome_base_csv)
+            caminho_excel = os.path.join(diretorio_saida, nome_base_excel)
+        except OSError as e:
+            logging.error(f"Não foi possível criar ou acessar o diretório de saída '{diretorio_saida}': {e}. Verifique as permissões.")
+            # Re-levanta a exceção para que o chamador (método salvar) possa decidir como lidar
+            raise
+    else:
+        # Se nenhum diretório foi especificado, usa o diretório atual
+        caminho_csv = nome_base_csv
+        caminho_excel = nome_base_excel
+
+    logging.info(f"Caminho final definido para CSV: {caminho_csv}")
+    logging.info(f"Caminho final definido para Excel: {caminho_excel}")
+
+    return {'caminho_csv': caminho_csv, 'caminho_excel': caminho_excel}
+
 
 def calcular_e_plotar_cotovelo(X: csr_matrix, limite_k: int, n_init: int = 1) -> Optional[List[float]]:
     """
