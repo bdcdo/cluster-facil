@@ -3,9 +3,10 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import KMeans
 from nltk.corpus import stopwords
 import matplotlib.pyplot as plt
-from typing import Optional, List
+from typing import Optional, List, Union # Adicionado Union
 from scipy.sparse import csr_matrix
 import logging
+import os # Adicionado os
 
 # Configuração básica de logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -42,22 +43,103 @@ class ClusterFacil():
             X (Optional[csr_matrix]): Matriz TF-IDF resultante do pré-processamento.
             inercias (Optional[List[float]]): Lista de inercias calculadas para diferentes K no método do cotovelo.
     """
-    def __init__(self, df: pd.DataFrame):
+    def __init__(self, entrada: Union[pd.DataFrame, str]):
         """
         Inicializa a classe ClusterFacil.
 
         Args:
-            df (pd.DataFrame): O DataFrame contendo os dados a serem clusterizados.
-                               Deve incluir uma coluna com os textos.
+            entrada (Union[pd.DataFrame, str]): Pode ser um DataFrame do Pandas já carregado
+                                                 ou uma string contendo o caminho para um arquivo
+                                                 de dados (suporta .csv, .xlsx, .parquet, .json).
+                                                 O DataFrame ou arquivo deve incluir uma coluna
+                                                 com os textos a serem clusterizados.
+
+        Raises:
+            TypeError: Se a entrada não for um DataFrame ou uma string.
+            FileNotFoundError: Se a entrada for uma string e o arquivo não for encontrado.
+            ImportError: Se uma dependência necessária (ex: openpyxl, pyarrow) não estiver instalada.
+            ValueError: Se o formato do arquivo não for suportado ou houver erro na leitura.
         """
-        if not isinstance(df, pd.DataFrame):
-            raise TypeError("O argumento 'df' deve ser um DataFrame do Pandas.")
-        self.df: pd.DataFrame = df.copy() # Copiar para evitar modificar o original inesperadamente
+        if isinstance(entrada, pd.DataFrame):
+            self.df: pd.DataFrame = entrada.copy() # Copiar para evitar modificar o original inesperadamente
+            logging.info("ClusterFacil inicializado com DataFrame existente.")
+        elif isinstance(entrada, str):
+            self.df: pd.DataFrame = self._carregar_dados_de_arquivo(entrada)
+            logging.info(f"ClusterFacil inicializado com dados do arquivo: {entrada}")
+        else:
+            raise TypeError("A entrada deve ser um DataFrame do Pandas ou o caminho (string) para um arquivo.")
+
         self.rodada_clusterizacao: int = 1 # Inicializa o contador da rodada
         self.coluna_textos: Optional[str] = None
         self.X: Optional[csr_matrix] = None
         self.inercias: Optional[List[float]] = None
-        logging.info("ClusterFacil inicializado.")
+        # Logging movido para dentro das condições if/elif
+
+
+    def _carregar_dados_de_arquivo(self, caminho_arquivo: str) -> pd.DataFrame:
+        """
+        Método interno para carregar dados de um arquivo usando Pandas.
+
+        Suporta CSV, Excel (.xlsx), Parquet e JSON.
+
+        Args:
+            caminho_arquivo (str): O caminho para o arquivo de dados.
+
+        Returns:
+            pd.DataFrame: O DataFrame carregado.
+
+        Raises:
+            FileNotFoundError: Se o arquivo não for encontrado.
+            ImportError: Se uma dependência necessária (ex: openpyxl, pyarrow) não estiver instalada.
+            ValueError: Se o formato do arquivo não for suportado ou houver erro na leitura.
+            Exception: Para outros erros inesperados durante o carregamento.
+        """
+        logging.info(f"Tentando carregar dados do arquivo: {caminho_arquivo}")
+        if not os.path.exists(caminho_arquivo):
+            logging.error(f"Arquivo não encontrado: {caminho_arquivo}")
+            raise FileNotFoundError(f"Arquivo não encontrado: {caminho_arquivo}")
+
+        _, extensao = os.path.splitext(caminho_arquivo)
+        extensao = extensao.lower()
+
+        try:
+            if extensao == '.csv':
+                df = pd.read_csv(caminho_arquivo)
+            elif extensao == '.xlsx':
+                # Tenta importar openpyxl para dar um erro mais informativo se faltar
+                try:
+                    import openpyxl
+                except ImportError:
+                     logging.error("A biblioteca 'openpyxl' é necessária para ler arquivos .xlsx. Instale-a com 'pip install openpyxl'")
+                     raise ImportError("A biblioteca 'openpyxl' é necessária para ler arquivos .xlsx.")
+                df = pd.read_excel(caminho_arquivo) # Pode precisar de sheet_name='nome_da_aba' em alguns casos
+            elif extensao == '.parquet':
+                 # Tenta importar pyarrow para dar um erro mais informativo se faltar
+                try:
+                    import pyarrow
+                except ImportError:
+                     logging.error("A biblioteca 'pyarrow' é necessária para ler arquivos .parquet. Instale-a com 'pip install pyarrow'")
+                     raise ImportError("A biblioteca 'pyarrow' é necessária para ler arquivos .parquet.")
+                df = pd.read_parquet(caminho_arquivo)
+            elif extensao == '.json':
+                df = pd.read_json(caminho_arquivo)
+            else:
+                logging.error(f"Formato de arquivo não suportado: {extensao}")
+                raise ValueError(f"Formato de arquivo não suportado: {extensao}. Suportados: .csv, .xlsx, .parquet, .json")
+
+            logging.info(f"Arquivo {caminho_arquivo} carregado com sucesso. Shape: {df.shape}")
+            return df
+        except FileNotFoundError: # Redundante devido à verificação inicial, mas seguro
+             logging.error(f"Erro: Arquivo não encontrado ao tentar ler: {caminho_arquivo}")
+             raise
+        except ImportError as e: # Captura especificamente erros de importação de dependências
+             logging.error(f"Erro de importação ao tentar ler {caminho_arquivo}: {e}")
+             raise
+        except Exception as e:
+            logging.error(f"Erro ao ler o arquivo {caminho_arquivo} (formato {extensao}): {e}")
+            # Pode ser útil levantar um erro mais específico ou apenas o genérico
+            raise ValueError(f"Erro ao processar o arquivo {caminho_arquivo}: {e}")
+
 
     def preparar(self, coluna_textos: str, limite_k: int = 10, n_init = 1) -> None:
         """
