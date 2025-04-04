@@ -4,17 +4,15 @@ from sklearn.cluster import KMeans
 from typing import Optional, List, Union
 from scipy.sparse import csr_matrix
 import logging
-import os
-import logging
 
-# Importações de utils e validations
+
 from .utils import (
     stop_words_pt,
     calcular_e_plotar_cotovelo,
     salvar_dataframe_csv,
     salvar_amostras_excel,
     preparar_caminhos_saida,
-    carregar_dados # Adicionada
+    carregar_dados
 )
 from .validations import (
     validar_entrada_inicial,
@@ -22,8 +20,7 @@ from .validations import (
     validar_dependencia_leitura,
     validar_formato_suportado,
     validar_coluna_existe,
-    # validar_parametro_limite_k, # Removida
-    validar_inteiro_positivo,   # Adicionada
+    validar_inteiro_positivo,
     validar_tipo_coluna_texto,
     validar_estado_preparado,
     validar_parametro_num_clusters,
