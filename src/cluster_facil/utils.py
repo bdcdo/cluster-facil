@@ -26,10 +26,17 @@ except LookupError:
         stop_words_pt = [word.lower() for word in stop_words_pt_set]
         logging.info("Download de 'stopwords' concluído e stopwords carregadas.")
     except Exception as e:
-        logging.error(f"Falha ao baixar 'stopwords': {e}. Stopwords em português não serão usadas.")
+        logging.error(
+            f"Falha ao baixar 'stopwords' do NLTK: {e}. "
+            "Verifique sua conexão com a internet ou configurações de firewall. "
+            "As stopwords em português não serão usadas, o que pode afetar a qualidade da clusterização."
+        )
         # Mantém stop_words_pt como lista vazia
 except Exception as e:
-    logging.error(f"Erro inesperado ao carregar stopwords: {e}. Stopwords em português não serão usadas.")
+    logging.error(
+        f"Erro inesperado ao carregar stopwords: {e}. "
+        "As stopwords em português não serão usadas, o que pode afetar a qualidade da clusterização."
+    )
     # Mantém stop_words_pt como lista vazia
 
 # --- Funções Auxiliares ---

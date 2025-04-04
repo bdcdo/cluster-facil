@@ -223,12 +223,14 @@ class ClusterFacil():
         logging.info(f"Clusterização da rodada {self.rodada_clusterizacao - 1} concluída.")
         return nome_coluna_cluster
 
-    def salvar(self, prefixo_saida: str = '') -> dict[str, bool]:
+    def salvar(self, prefixo_saida: str = '', diretorio_saida: Optional[str] = None) -> dict[str, bool]:
         """
         Salva os resultados da última clusterização realizada (DataFrame completo em CSV e amostras em Excel).
 
         Args:
             prefixo_saida (str, optional): Prefixo para os nomes dos arquivos de saída. Default ''.
+            diretorio_saida (Optional[str], optional): Caminho da pasta onde salvar os arquivos.
+                                                      Se None (padrão), salva no diretório atual. Default None.
 
         Returns:
             dict[str, bool]: Um dicionário indicando o sucesso do salvamento de cada arquivo.
@@ -246,16 +248,36 @@ class ClusterFacil():
         num_clusters = self._ultimo_num_clusters
 
         if nome_coluna_cluster not in self.df.columns:
-             # Verificação de segurança, embora improvável se a lógica estiver correta
-             logging.error(f"Erro interno: Coluna '{nome_coluna_cluster}' da última clusterização não encontrada.")
-             return {'csv_salvo': False, 'excel_salvo': False}
+            # Verificação de segurança, embora improvável se a lógica estiver correta
+            logging.error(f"Erro interno: Coluna '{nome_coluna_cluster}' da última clusterização não encontrada.")
+            return {'csv_salvo': False, 'excel_salvo': False}
 
-        # Definir nomes de arquivo
+         # Definir nomes de arquivo base
         prefixo_fmt = f"{prefixo_saida}_" if prefixo_saida else ""
-        nome_csv = f"{prefixo_fmt}clusters_{rodada_a_salvar}.csv"
-        nome_excel = f"{prefixo_fmt}amostras_por_cluster_{rodada_a_salvar}.xlsx"
+        nome_base_csv = f"{prefixo_fmt}clusters_{rodada_a_salvar}.csv"
+        nome_base_excel = f"{prefixo_fmt}amostras_por_cluster_{rodada_a_salvar}.xlsx"
 
-        # Chamar funções de utils.py para salvar e coletar status
+        # Construir caminho final usando o parâmetro diretorio_saida
+        if diretorio_saida:
+            try:
+                os.makedirs(diretorio_saida, exist_ok=True)
+                logging.info(f"Diretório de saída '{diretorio_saida}' verificado/criado.")
+                nome_csv = os.path.join(diretorio_saida, nome_base_csv)
+                nome_excel = os.path.join(diretorio_saida, nome_base_excel)
+            except OSError as e:
+                logging.error(f"Não foi possível criar ou acessar o diretório de saída '{diretorio_saida}': {e}. Salvando no diretório atual.")
+                # Fallback para o diretório atual em caso de erro
+                nome_csv = nome_base_csv
+                nome_excel = nome_base_excel
+        else:
+            # Se nenhum diretório foi especificado, usa o diretório atual
+            nome_csv = nome_base_csv
+            nome_excel = nome_base_excel
+
+        logging.info(f"Caminho final para CSV: {nome_csv}")
+        logging.info(f"Caminho final para Excel: {nome_excel}")
+
+        # Chamar funções de utils.py para salvar
         sucesso_csv = salvar_dataframe_csv(self.df, nome_csv)
         sucesso_excel = salvar_amostras_excel(self.df, nome_coluna_cluster, num_clusters, nome_excel)
 
@@ -271,7 +293,7 @@ class ClusterFacil():
 
     # --- MÉTODO DE CONVENIÊNCIA ---
 
-    def finaliza(self, num_clusters: int, prefixo_saida: str = '') -> dict[str, bool]:
+    def finaliza(self, num_clusters: int, prefixo_saida: str = '', diretorio_saida: Optional[str] = None) -> dict[str, bool]:
         """
         Método de conveniência que executa a clusterização e depois salva os resultados.
 
@@ -282,6 +304,8 @@ class ClusterFacil():
         Args:
             num_clusters (int): O número de clusters (K) a ser usado.
             prefixo_saida (str, optional): Prefixo para os nomes dos arquivos de saída. Default ''.
+            diretorio_saida (Optional[str], optional): Caminho da pasta onde salvar os arquivos.
+                                                      Se None (padrão), salva no diretório atual. Default None.
 
         Returns:
             dict[str, bool]: O status do salvamento dos arquivos (ver método `salvar`).
@@ -296,7 +320,7 @@ class ClusterFacil():
         self.clusterizar(num_clusters)
 
         # 2. Salvar (não levanta exceção por falha de IO, apenas loga e retorna status)
-        status_salvamento = self.salvar(prefixo_saida)
+        status_salvamento = self.salvar(prefixo_saida=prefixo_saida, diretorio_saida=diretorio_saida)
 
         logging.info(f"'Finaliza' concluído para a rodada {self.rodada_clusterizacao - 1}. Status de salvamento: {status_salvamento}")
         return status_salvamento # Retorna o status do salvamento
