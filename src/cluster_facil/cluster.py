@@ -1,31 +1,14 @@
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import KMeans
-from nltk.corpus import stopwords
-import matplotlib.pyplot as plt
 from typing import Optional, List, Union
 from scipy.sparse import csr_matrix
 import logging
 import os
 
-# Configuração básica de logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+from .utils import stop_words_pt, calcular_e_plotar_cotovelo, salvar_dataframe_csv, salvar_amostras_excel
 
-# Carregar stopwords uma vez
-try:
-    stop_words_pt = set(stopwords.words('portuguese'))
-    stop_words_pt = [word.lower() for word in stop_words_pt]
-except LookupError:
-    logging.error("Recurso 'stopwords' do NLTK não encontrado. Tentando baixar...")
-    import nltk
-    try:
-        nltk.download('stopwords')
-        stop_words_pt = set(stopwords.words('portuguese'))
-        stop_words_pt = [word.lower() for word in stop_words_pt]
-        logging.info("Download de 'stopwords' concluído.")
-    except Exception as e:
-        logging.error(f"Falha ao baixar 'stopwords': {e}. Stopwords em português não serão usadas.")
-        stop_words_pt = []
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class ClusterFacil():
     """
@@ -43,7 +26,7 @@ class ClusterFacil():
             X (Optional[csr_matrix]): Matriz TF-IDF resultante do pré-processamento.
             inercias (Optional[List[float]]): Lista de inercias calculadas para diferentes K no método do cotovelo.
     """
-    def __init__(self, entrada: Union[pd.DataFrame, str]):
+    def __init__(self, entrada: Union[pd.DataFrame, str], aba: Optional[str] = None):
         """
         Inicializa a classe ClusterFacil.
 
@@ -53,6 +36,9 @@ class ClusterFacil():
                                                  de dados (suporta .csv, .xlsx, .parquet, .json).
                                                  O DataFrame ou arquivo deve incluir uma coluna
                                                  com os textos a serem clusterizados.
+            aba (Optional[str], optional): O nome ou índice da aba a ser lida caso a entrada
+                                           seja um caminho para um arquivo Excel (.xlsx).
+                                           Se None (padrão), lê a primeira aba. Default é None.
 
         Raises:
             TypeError: Se a entrada não for um DataFrame ou uma string.
@@ -64,8 +50,8 @@ class ClusterFacil():
             self.df: pd.DataFrame = entrada.copy() # Copiar para evitar modificar o original inesperadamente
             logging.info("ClusterFacil inicializado com DataFrame existente.")
         elif isinstance(entrada, str):
-            self.df: pd.DataFrame = self._carregar_dados_de_arquivo(entrada)
-            logging.info(f"ClusterFacil inicializado com dados do arquivo: {entrada}")
+            self.df: pd.DataFrame = self._carregar_dados_de_arquivo(entrada, aba=aba) # Passa o parâmetro aba
+            logging.info(f"ClusterFacil inicializado com dados do arquivo: {entrada}" + (f" (aba: {aba})" if aba else ""))
         else:
             raise TypeError("A entrada deve ser um DataFrame do Pandas ou o caminho (string) para um arquivo.")
 
@@ -73,11 +59,10 @@ class ClusterFacil():
         self.coluna_textos: Optional[str] = None
         self.X: Optional[csr_matrix] = None
         self.inercias: Optional[List[float]] = None
-        self._ultimo_num_clusters: Optional[int] = None # Para rastrear K da última rodada
-        self._ultima_coluna_cluster: Optional[str] = None # Para rastrear nome da coluna da última rodada
+        self._ultimo_num_clusters: Optional[int] = None
+        self._ultima_coluna_cluster: Optional[str] = None
 
-
-    def _carregar_dados_de_arquivo(self, caminho_arquivo: str) -> pd.DataFrame:
+    def _carregar_dados_de_arquivo(self, caminho_arquivo: str, aba: Optional[str] = None) -> pd.DataFrame:
         """
         Método interno para carregar dados de um arquivo usando Pandas.
 
@@ -85,6 +70,8 @@ class ClusterFacil():
 
         Args:
             caminho_arquivo (str): O caminho para o arquivo de dados.
+            aba (Optional[str], optional): O nome ou índice da aba a ser lida se for um arquivo Excel.
+                                           Se None, lê a primeira aba. Default é None.
 
         Returns:
             pd.DataFrame: O DataFrame carregado.
@@ -113,7 +100,8 @@ class ClusterFacil():
                 except ImportError:
                      logging.error("A biblioteca 'openpyxl' é necessária para ler arquivos .xlsx. Instale-a com 'pip install openpyxl'")
                      raise ImportError("A biblioteca 'openpyxl' é necessária para ler arquivos .xlsx.")
-                df = pd.read_excel(caminho_arquivo) # Pode precisar de sheet_name='nome_da_aba' em alguns casos
+                # Usa o parâmetro 'aba' (sheet_name) ao ler o Excel
+                df = pd.read_excel(caminho_arquivo, sheet_name=aba)
             elif extensao == '.parquet':
                  # Tenta importar pyarrow para dar um erro mais informativo se faltar
                 try:
@@ -176,124 +164,19 @@ class ClusterFacil():
              raise TypeError(f"Erro ao processar a coluna '{coluna_textos}'. Verifique se ela contém texto. Erro original: {e}")
 
         logging.info("Calculando TF-IDF...")
+        # Usa stop_words_pt importado de utils.py
         vectorizer = TfidfVectorizer(stop_words=stop_words_pt)
         self.X = vectorizer.fit_transform(textos_processados)
         logging.info(f"Matriz TF-IDF calculada com shape: {self.X.shape}")
 
-        logging.info("Calculando inércias para o método do cotovelo...")
-        self.inercias = []
-        # Garante que limite_k não seja maior que o número de amostras
-        k_max = min(limite_k, self.X.shape[0])
-        if k_max < limite_k:
-             logging.warning(f"Limite K ({limite_k}) é maior que o número de amostras ({self.X.shape[0]}). Usando K máximo = {k_max}.")
-        if k_max == 0:
-            logging.error("Não há amostras para calcular o método do cotovelo.")
-            plt.figure(figsize=(10, 6))
-            plt.title('Método do Cotovelo - Nenhuma amostra encontrada')
-            plt.xlabel('Número de Clusters (K)')
-            plt.ylabel('Inércia (WCSS)')
-            plt.text(0.5, 0.5, 'Não há dados para processar', horizontalalignment='center', verticalalignment='center', transform=plt.gca().transAxes)
-            plt.grid(True)
-            plt.show()
-            logging.info("Preparação concluída (sem dados).")
-            return # Sai da função se não há amostras
+        # Chama a função auxiliar para calcular inércias e plotar o gráfico
+        self.inercias = calcular_e_plotar_cotovelo(self.X, limite_k, n_init)
 
-        k_range = range(1, k_max + 1)
-        for k in k_range:
-            # Adiciona tratamento para n_init > número de amostras se k=1
-            current_n_init = n_init
-            if k == 1 and n_init > self.X.shape[0]:
-                 logging.warning(f"n_init ({n_init}) é maior que o número de amostras ({self.X.shape[0]}) para K=1. Usando n_init=1.")
-                 current_n_init = 1
-            elif n_init <= 0:
-                 logging.warning(f"n_init ({n_init}) deve ser positivo. Usando n_init=1.")
-                 current_n_init = 1
-
-            kmeans = KMeans(n_clusters=k, random_state=42, n_init=current_n_init)
-            kmeans.fit(self.X)
-            self.inercias.append(kmeans.inertia_)
-            logging.debug(f"Inércia para K={k}: {kmeans.inertia_}")
-
-        logging.info("Gerando gráfico do método do cotovelo...")
-        plt.figure(figsize=(10, 6))
-        plt.plot(k_range, self.inercias, marker='o')
-        plt.title('Método do Cotovelo para Escolha de K')
-        plt.xlabel('Número de Clusters (K)')
-        plt.ylabel('Inércia (WCSS)')
-        # Garante que xticks funcione mesmo com k_max=1
-        if k_max > 0:
-            plt.xticks(k_range)
-        plt.grid(True)
-        plt.show()
-        logging.info("Preparação concluída. Analise o gráfico do cotovelo para escolher o número de clusters.")
-
-    def _salvar_csv(self, nome_arquivo: str) -> None:
-        """
-        Método interno para salvar o DataFrame principal em CSV.
-
-        Em caso de erro, registra a falha no log, mas não levanta exceção.
-        """
-        logging.info(f"Tentando salvar DataFrame completo em '{nome_arquivo}'...")
-        try:
-            self.df.to_csv(nome_arquivo, index=False, encoding='utf-8-sig')
-            logging.info(f"DataFrame salvo com sucesso em '{nome_arquivo}'.")
-        except Exception as e:
-            logging.error(f"Falha ao salvar o arquivo CSV '{nome_arquivo}': {e}")
-            return False # Retorna False em caso de falha
-        return True # Retorna True se chegou aqui (sucesso)
-
-    def _salvar_amostras_excel(self, nome_arquivo: str, nome_coluna_cluster: str, num_clusters: int) -> bool:
-        """
-        Método interno para gerar e salvar amostras (até 10 por cluster) em Excel.
-
-        Retorna True se o salvamento for bem-sucedido, False caso contrário.
-        Em caso de erro, registra a falha no log, mas não levanta exceção.
-        """
-        logging.info(f"Tentando gerar e salvar amostras (até 10 por cluster) em '{nome_arquivo}'...")
-        resultados = pd.DataFrame()
-        if nome_coluna_cluster not in self.df.columns:
-            logging.error(f"Coluna de cluster '{nome_coluna_cluster}' não encontrada no DataFrame ao tentar salvar amostras.")
-            return False # Falha se a coluna não existe
-
-        try:
-            # Tenta importar openpyxl ANTES de gerar os resultados, pois será necessário para salvar
-            try:
-                import openpyxl
-            except ImportError:
-                 logging.error("A biblioteca 'openpyxl' é necessária para salvar arquivos .xlsx. Instale-a com 'pip install openpyxl'")
-                 return False # Falha se a dependência está ausente
-
-            # Garante que num_clusters não seja maior que o número real de clusters gerados
-            actual_clusters = self.df[nome_coluna_cluster].unique()
-            valid_num_clusters = len(actual_clusters)
-
-            for cluster_id in range(num_clusters): # Itera até o K solicitado
-                 if cluster_id not in actual_clusters:
-                      logging.warning(f"Cluster ID {cluster_id} não foi gerado (possivelmente K muito alto ou dados insuficientes). Nenhuma amostra será retirada.")
-                      continue
-
-                 df_cluster = self.df[self.df[nome_coluna_cluster] == cluster_id]
-                 tamanho_amostra = min(10, len(df_cluster))
-                 if tamanho_amostra > 0:
-                     amostra_cluster = df_cluster.sample(tamanho_amostra, random_state=42)
-                     # Adiciona a coluna de ID do cluster original para referência
-                     amostra_cluster.insert(0, 'cluster_original_id', cluster_id)
-                     resultados = pd.concat([resultados, amostra_cluster], ignore_index=True)
-                 else:
-                      logging.warning(f"Cluster {cluster_id} está vazio, nenhuma amostra será retirada.")
-
-            if not resultados.empty:
-                resultados.to_excel(nome_arquivo, index=False)
-                logging.info(f"Amostras salvas com sucesso em '{nome_arquivo}'.")
-            else:
-                 logging.warning("Nenhuma amostra foi gerada (todos os clusters estavam vazios ou não foram encontrados?). Arquivo Excel não será criado.")
-                 # Consideramos isso um sucesso, pois não houve erro de IO.
-                 return True
-
-        except Exception as e:
-            logging.error(f"Falha ao gerar ou salvar o arquivo Excel de amostras '{nome_arquivo}': {e}")
-            return False # Falha em caso de exceção
-        return True # Retorna True se tudo correu bem (incluindo caso sem amostras)
+        if self.inercias is not None:
+             logging.info("Preparação concluída. Analise o gráfico do cotovelo para escolher o número de clusters.")
+        else:
+             # A função auxiliar já logou o erro/aviso
+             logging.info("Preparação concluída (sem dados para o método do cotovelo).")
 
     def clusterizar(self, num_clusters: int) -> str:
         """
@@ -372,12 +255,13 @@ class ClusterFacil():
         nome_csv = f"{prefixo_fmt}clusters_{rodada_a_salvar}.csv"
         nome_excel = f"{prefixo_fmt}amostras_por_cluster_{rodada_a_salvar}.xlsx"
 
-        # Chamar métodos internos para salvar e coletar status
-        sucesso_csv = self._salvar_csv(nome_csv)
-        sucesso_excel = self._salvar_amostras_excel(nome_excel, nome_coluna_cluster, num_clusters)
+        # Chamar funções de utils.py para salvar e coletar status
+        sucesso_csv = salvar_dataframe_csv(self.df, nome_csv)
+        sucesso_excel = salvar_amostras_excel(self.df, nome_coluna_cluster, num_clusters, nome_excel)
 
+        # A lógica de warning já está dentro das funções em utils.py, mas podemos manter aqui se quisermos um log adicional
         if not sucesso_csv:
-            logging.warning(f"Houve um problema ao salvar o arquivo CSV: {nome_csv}. Verifique os logs.")
+            logging.warning(f"Salvamento do CSV ({nome_csv}) falhou (ver logs anteriores).")
         if not sucesso_excel:
             logging.warning(f"Houve um problema ao salvar o arquivo Excel de amostras: {nome_excel}. Verifique os logs.")
 

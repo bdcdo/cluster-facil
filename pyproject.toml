@@ -28,7 +28,8 @@ dependencies = [
     "nltk",
     "matplotlib",
     "scipy",
-    "openpyxl", # Adicionado para suporte a .xlsx
+    "openpyxl",
+    "pyarrow"
 ]
 
 [project.urls]
