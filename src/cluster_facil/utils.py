@@ -1,25 +1,37 @@
-import logging
-import nltk
-from nltk.corpus import stopwords
-import pandas as pd
-import matplotlib.pyplot as plt
-from sklearn.cluster import KMeans
-from scipy.sparse import csr_matrix
-from typing import List, Optional
-import os
+# -*- coding: utf-8 -*-
+"""Módulo de funções utilitárias para o pacote cluster_facil."""
 
-# Configuração básica de logging (pode ser compartilhada ou configurada por quem usa o utils)
+# --- Importações ---
+import logging
+import os
+from typing import List, Optional
+import matplotlib.pyplot as plt
+import nltk
+import pandas as pd
+from nltk.corpus import stopwords
+from scipy.sparse import csr_matrix
+from sklearn.cluster import KMeans
+
+from .validations import (
+    validar_arquivo_existe,
+    validar_dependencia_leitura,
+    validar_formato_suportado,
+    validar_coluna_existe,
+    validar_inteiro_positivo,
+    validar_dependencia
+)
+
+# --- Configuração de Logging ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# --- Carregamento de Stopwords ---
+# --- Carregamento de Stopwords (Executado na importação do módulo) ---
 stop_words_pt: List[str] = []
 try:
     stop_words_pt_set = set(stopwords.words('portuguese'))
-    # Garantir minúsculas, embora stopwords do NLTK geralmente já estejam
     stop_words_pt = [word.lower() for word in stop_words_pt_set]
     logging.info("Stopwords em português carregadas do NLTK.")
 except LookupError:
-    logging.error("Recurso 'stopwords' do NLTK não encontrado. Tentando baixar...")
+    logging.warning("Recurso 'stopwords' do NLTK não encontrado. Tentando baixar...")
     try:
         nltk.download('stopwords')
         stop_words_pt_set = set(stopwords.words('portuguese'))
@@ -28,20 +40,120 @@ except LookupError:
     except Exception as e:
         logging.error(
             f"Falha ao baixar 'stopwords' do NLTK: {e}. "
-            "Verifique sua conexão com a internet ou configurações de firewall. "
-            "As stopwords em português não serão usadas, o que pode afetar a qualidade da clusterização."
+            "Verifique sua conexão ou firewall. Stopwords não serão usadas."
         )
-        # Mantém stop_words_pt como lista vazia
 except Exception as e:
     logging.error(
-        f"Erro inesperado ao carregar stopwords: {e}. "
-        "As stopwords em português não serão usadas, o que pode afetar a qualidade da clusterização."
+        f"Erro inesperado ao carregar stopwords: {e}. Stopwords não serão usadas."
     )
-# Mantém stop_words_pt como lista vazia
 
+# --- Funções de Carregamento de Dados ---
+def carregar_dados(caminho_arquivo: str, aba: Optional[str] = None) -> pd.DataFrame:
+    """
+    Carrega dados de um arquivo usando Pandas.
 
-# --- Funções Auxiliares ---
+    Suporta CSV, Excel (.xlsx), Parquet e JSON.
 
+    Args:
+        caminho_arquivo (str): O caminho para o arquivo de dados.
+        aba (Optional[str], optional): O nome ou índice da aba a ser lida se for um arquivo Excel.
+                                       Se None, lê a primeira aba. Default é None.
+
+    Returns:
+        pd.DataFrame: O DataFrame carregado.
+
+    Raises:
+        FileNotFoundError: Se o arquivo não for encontrado.
+        ImportError: Se uma dependência necessária (ex: openpyxl, pyarrow) não estiver instalada.
+        ValueError: Se o formato do arquivo não for suportado ou houver erro na leitura.
+        Exception: Para outros erros inesperados durante o carregamento.
+    """
+    logging.info(f"Tentando carregar dados do arquivo: {caminho_arquivo}")
+    validar_arquivo_existe(caminho_arquivo)
+    _, extensao = os.path.splitext(caminho_arquivo)
+    extensao = extensao.lower()
+    validar_formato_suportado(extensao)
+    validar_dependencia_leitura(extensao)
+
+    try:
+        if extensao == '.csv':
+            df = pd.read_csv(caminho_arquivo)
+        elif extensao == '.xlsx':
+            df = pd.read_excel(caminho_arquivo, sheet_name=aba)
+        elif extensao == '.parquet':
+            df = pd.read_parquet(caminho_arquivo)
+        elif extensao == '.json':
+            df = pd.read_json(caminho_arquivo)
+
+        logging.info(f"Arquivo {caminho_arquivo} carregado com sucesso. Shape: {df.shape}")
+        return df
+    except Exception as e:
+        # Captura outros erros de leitura (ex: arquivo corrompido, JSON mal formatado)
+        logging.error(f"Erro ao ler o arquivo {caminho_arquivo} (formato {extensao}): {e}")
+        raise ValueError(f"Erro ao processar o arquivo {caminho_arquivo}: {e}")
+
+# --- Funções de Análise e Plotagem ---
+def calcular_e_plotar_cotovelo(X: csr_matrix, limite_k: int, n_init: int = 1) -> Optional[List[float]]:
+    """
+    Calcula as inércias para diferentes valores de K e plota o gráfico do método do cotovelo.
+
+    Args:
+        X (csr_matrix): Matriz TF-IDF dos dados.
+        limite_k (int): Número máximo de clusters (K) a testar.
+        n_init (int): Número de inicializações do K-Means.
+
+    Returns:
+        Optional[List[float]]: Lista de inércias calculadas, ou None se não houver dados.
+    """
+    logging.info("Calculando inércias para o método do cotovelo...")
+    # Valida n_init antes de começar usando a função genérica
+    validar_inteiro_positivo('n_init', n_init)
+
+    inercias = []
+    # Garante que limite_k não seja maior que o número de amostras
+    k_max = min(limite_k, X.shape[0])
+    if k_max < limite_k:
+        logging.warning(f"Limite K ({limite_k}) é maior que o número de amostras ({X.shape[0]}). Usando K máximo = {k_max}.")
+    if k_max == 0:
+        logging.error("Não há amostras para calcular o método do cotovelo.")
+        plt.figure(figsize=(10, 6))
+        plt.title('Método do Cotovelo - Nenhuma amostra encontrada')
+        plt.xlabel('Número de Clusters (K)')
+        plt.ylabel('Inércia (WCSS)')
+        plt.text(0.5, 0.5, 'Não há dados para processar', horizontalalignment='center', verticalalignment='center', transform=plt.gca().transAxes)
+        plt.grid(True)
+        plt.show()
+        return None # Retorna None se não há amostras
+
+    k_range = range(1, k_max + 1)
+    for k in k_range:
+        # Adiciona tratamento para n_init
+        # Ajusta n_init apenas se for maior que as amostras para K=1 (caso especial do KMeans)
+        # A validação de n_init > 0 já foi feita
+        current_n_init = n_init
+        if k == 1 and n_init > X.shape[0]:
+            logging.warning(f"n_init ({n_init}) > amostras ({X.shape[0]}) para K=1. Usando n_init=1.")
+            current_n_init = 1
+        # Não precisa mais do elif n_init <= 0
+
+        kmeans = KMeans(n_clusters=k, random_state=42, n_init=current_n_init)
+        kmeans.fit(X)
+        inercias.append(kmeans.inertia_)
+        logging.debug(f"Inércia para K={k}: {kmeans.inertia_}")
+
+    logging.info("Gerando gráfico do método do cotovelo...")
+    plt.figure(figsize=(10, 6))
+    plt.plot(k_range, inercias, marker='o')
+    plt.title('Método do Cotovelo para Escolha de K')
+    plt.xlabel('Número de Clusters (K)')
+    plt.ylabel('Inércia (WCSS)')
+    if k_max > 0:
+        plt.xticks(k_range)
+    plt.grid(True)
+    plt.show()
+    return inercias
+
+# --- Funções de Preparação de Caminhos ---
 def preparar_caminhos_saida(diretorio_saida: Optional[str], prefixo_saida: str, rodada_clusterizacao: int) -> dict[str, str]:
     """
     Prepara os caminhos completos para os arquivos de saída CSV e Excel.
@@ -61,12 +173,10 @@ def preparar_caminhos_saida(diretorio_saida: Optional[str], prefixo_saida: str, 
     """
     logging.info(f"Preparando caminhos de saída para a rodada {rodada_clusterizacao} com prefixo '{prefixo_saida}' e diretório '{diretorio_saida or '.'}'")
 
-    # Definir nomes de arquivo base
     prefixo_fmt = f"{prefixo_saida}_" if prefixo_saida else ""
     nome_base_csv = f"{prefixo_fmt}clusters_{rodada_clusterizacao}.csv"
     nome_base_excel = f"{prefixo_fmt}amostras_por_cluster_{rodada_clusterizacao}.xlsx"
 
-    # Construir caminho final usando o parâmetro diretorio_saida
     if diretorio_saida:
         try:
             os.makedirs(diretorio_saida, exist_ok=True)
@@ -74,79 +184,17 @@ def preparar_caminhos_saida(diretorio_saida: Optional[str], prefixo_saida: str, 
             caminho_csv = os.path.join(diretorio_saida, nome_base_csv)
             caminho_excel = os.path.join(diretorio_saida, nome_base_excel)
         except OSError as e:
-            logging.error(f"Não foi possível criar ou acessar o diretório de saída '{diretorio_saida}': {e}. Verifique as permissões.")
-            # Re-levanta a exceção para que o chamador (método salvar) possa decidir como lidar
+            logging.error(f"Não foi possível criar ou acessar o diretório '{diretorio_saida}': {e}.")
             raise
     else:
-        # Se nenhum diretório foi especificado, usa o diretório atual
         caminho_csv = nome_base_csv
         caminho_excel = nome_base_excel
 
     logging.info(f"Caminho final definido para CSV: {caminho_csv}")
     logging.info(f"Caminho final definido para Excel: {caminho_excel}")
-
     return {'caminho_csv': caminho_csv, 'caminho_excel': caminho_excel}
 
-
-def calcular_e_plotar_cotovelo(X: csr_matrix, limite_k: int, n_init: int = 1) -> Optional[List[float]]:
-    """
-    Calcula as inércias para diferentes valores de K e plota o gráfico do método do cotovelo.
-
-    Args:
-        X (csr_matrix): Matriz TF-IDF dos dados.
-        limite_k (int): Número máximo de clusters (K) a testar.
-        n_init (int): Número de inicializações do K-Means.
-
-    Returns:
-        Optional[List[float]]: Lista de inércias calculadas, ou None se não houver dados.
-    """
-    logging.info("Calculando inércias para o método do cotovelo...")
-    inercias = []
-    # Garante que limite_k não seja maior que o número de amostras
-    k_max = min(limite_k, X.shape[0])
-    if k_max < limite_k:
-        logging.warning(f"Limite K ({limite_k}) é maior que o número de amostras ({X.shape[0]}). Usando K máximo = {k_max}.")
-    if k_max == 0:
-        logging.error("Não há amostras para calcular o método do cotovelo.")
-        plt.figure(figsize=(10, 6))
-        plt.title('Método do Cotovelo - Nenhuma amostra encontrada')
-        plt.xlabel('Número de Clusters (K)')
-        plt.ylabel('Inércia (WCSS)')
-        plt.text(0.5, 0.5, 'Não há dados para processar', horizontalalignment='center', verticalalignment='center', transform=plt.gca().transAxes)
-        plt.grid(True)
-        plt.show()
-        return None # Retorna None se não há amostras
-
-    k_range = range(1, k_max + 1)
-    for k in k_range:
-        # Adiciona tratamento para n_init > número de amostras se k=1
-        current_n_init = n_init
-        if k == 1 and n_init > X.shape[0]:
-            logging.warning(f"n_init ({n_init}) é maior que o número de amostras ({X.shape[0]}) para K=1. Usando n_init=1.")
-            current_n_init = 1
-        elif n_init <= 0:
-            logging.warning(f"n_init ({n_init}) deve ser positivo. Usando n_init=1.")
-            current_n_init = 1
-
-        kmeans = KMeans(n_clusters=k, random_state=42, n_init=current_n_init)
-        kmeans.fit(X)
-        inercias.append(kmeans.inertia_)
-        logging.debug(f"Inércia para K={k}: {kmeans.inertia_}")
-
-    logging.info("Gerando gráfico do método do cotovelo...")
-    plt.figure(figsize=(10, 6))
-    plt.plot(k_range, inercias, marker='o')
-    plt.title('Método do Cotovelo para Escolha de K')
-    plt.xlabel('Número de Clusters (K)')
-    plt.ylabel('Inércia (WCSS)')
-    # Garante que xticks funcione mesmo com k_max=1
-    if k_max > 0:
-        plt.xticks(k_range)
-    plt.grid(True)
-    plt.show()
-    return inercias
-
-
+# --- Funções de Salvamento de Dados ---
 def salvar_dataframe_csv(df: pd.DataFrame, nome_arquivo: str) -> bool:
     """
     Salva um DataFrame em um arquivo CSV.
@@ -160,13 +208,12 @@ def salvar_dataframe_csv(df: pd.DataFrame, nome_arquivo: str) -> bool:
     """
     logging.info(f"Tentando salvar DataFrame em '{nome_arquivo}'...")
     try:
-        df.to_csv(nome_arquivo, index=False, encoding='utf-8-sig')
+        df.to_csv(nome_arquivo, index=False, encoding='utf-8-sig') # utf-8-sig para melhor compatibilidade Excel
         logging.info(f"DataFrame salvo com sucesso em '{nome_arquivo}'.")
         return True
     except Exception as e:
         logging.error(f"Falha ao salvar o arquivo CSV '{nome_arquivo}': {e}")
         return False
-
 
 def salvar_amostras_excel(df: pd.DataFrame, nome_coluna_cluster: str, num_clusters: int, nome_arquivo: str) -> bool:
     """
@@ -182,23 +229,19 @@ def salvar_amostras_excel(df: pd.DataFrame, nome_coluna_cluster: str, num_cluste
         bool: True se o salvamento for bem-sucedido (ou se não houver amostras), False em caso de erro.
     """
     logging.info(f"Tentando gerar e salvar amostras (até 10 por cluster) em '{nome_arquivo}'...")
-    resultados = pd.DataFrame()
-    if nome_coluna_cluster not in df.columns:
-        logging.error(f"Coluna de cluster '{nome_coluna_cluster}' não encontrada no DataFrame ao tentar salvar amostras.")
+    try:
+        validar_coluna_existe(df, nome_coluna_cluster)
+        validar_dependencia(
+            'openpyxl',
+            "A biblioteca 'openpyxl' é necessária para salvar arquivos .xlsx. Instale-a com 'pip install openpyxl'"
+        )
+    except (KeyError, ImportError) as e:
         return False
 
+    resultados = pd.DataFrame()
     try:
-        # Tenta importar openpyxl ANTES de gerar os resultados
-        try:
-            import openpyxl
-        except ImportError:
-            logging.error("A biblioteca 'openpyxl' é necessária para salvar arquivos .xlsx. Instale-a com 'pip install openpyxl'")
-            return False
-
         actual_clusters = df[nome_coluna_cluster].unique()
-        valid_num_clusters = len(actual_clusters) # Apenas para informação, não usado diretamente abaixo
-
-        for cluster_id in range(num_clusters): # Itera até o K solicitado
+        for cluster_id in range(num_clusters):
             if cluster_id not in actual_clusters:
                 logging.warning(f"Cluster ID {cluster_id} não foi gerado. Nenhuma amostra será retirada.")
                 continue
@@ -217,7 +260,7 @@ def salvar_amostras_excel(df: pd.DataFrame, nome_coluna_cluster: str, num_cluste
             logging.info(f"Amostras salvas com sucesso em '{nome_arquivo}'.")
         else:
             logging.warning("Nenhuma amostra foi gerada. Arquivo Excel não será criado.")
-            # Consideramos sucesso, pois não houve erro de IO.
+            # Consideramos sucesso, pois não houve erro de IO, apenas não havia o que salvar.
 
     except Exception as e:
         logging.error(f"Falha ao gerar ou salvar o arquivo Excel de amostras '{nome_arquivo}': {e}")

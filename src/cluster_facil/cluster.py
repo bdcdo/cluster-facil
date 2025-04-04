@@ -7,12 +7,14 @@ import logging
 import os
 import logging
 
+# Importações de utils e validations
 from .utils import (
     stop_words_pt,
     calcular_e_plotar_cotovelo,
     salvar_dataframe_csv,
     salvar_amostras_excel,
-    preparar_caminhos_saida
+    preparar_caminhos_saida,
+    carregar_dados # Adicionada
 )
 from .validations import (
     validar_entrada_inicial,
@@ -20,7 +22,8 @@ from .validations import (
     validar_dependencia_leitura,
     validar_formato_suportado,
     validar_coluna_existe,
-    validar_parametro_limite_k,
+    # validar_parametro_limite_k, # Removida
+    validar_inteiro_positivo,   # Adicionada
     validar_tipo_coluna_texto,
     validar_estado_preparado,
     validar_parametro_num_clusters,
@@ -66,14 +69,13 @@ class ClusterFacil():
             ImportError: Se uma dependência necessária (ex: openpyxl, pyarrow) não estiver instalada.
             ValueError: Se o formato do arquivo não for suportado ou houver erro na leitura.
         """
-        # Validação movida para validations.py
         validar_entrada_inicial(entrada)
 
         if isinstance(entrada, pd.DataFrame):
             self.df: pd.DataFrame = entrada.copy() # Copiar para evitar modificar o original inesperadamente
             logging.info("ClusterFacil inicializado com DataFrame existente.")
-        elif isinstance(entrada, str):
-            self.df: pd.DataFrame = self._carregar_dados_de_arquivo(entrada, aba=aba)
+        elif isinstance(entrada, str): # Sabemos que é string por causa da validação
+            self.df: pd.DataFrame = carregar_dados(entrada, aba=aba)
             logging.info(f"ClusterFacil inicializado com dados do arquivo: {entrada}" + (f" (aba: {aba})" if aba else ""))
 
         self.rodada_clusterizacao: int = 1
@@ -82,53 +84,6 @@ class ClusterFacil():
         self.inercias: Optional[List[float]] = None
         self._ultimo_num_clusters: Optional[int] = None
         self._ultima_coluna_cluster: Optional[str] = None
-
-    def _carregar_dados_de_arquivo(self, caminho_arquivo: str, aba: Optional[str] = None) -> pd.DataFrame:
-        """
-        Método interno para carregar dados de um arquivo usando Pandas.
-
-        Suporta CSV, Excel (.xlsx), Parquet e JSON.
-
-        Args:
-            caminho_arquivo (str): O caminho para o arquivo de dados.
-            aba (Optional[str], optional): O nome ou índice da aba a ser lida se for um arquivo Excel.
-                                           Se None, lê a primeira aba. Default é None.
-
-        Returns:
-            pd.DataFrame: O DataFrame carregado.
-
-        Raises:
-            FileNotFoundError: Se o arquivo não for encontrado.
-            ImportError: Se uma dependência necessária (ex: openpyxl, pyarrow) não estiver instalada.
-            ValueError: Se o formato do arquivo não for suportado ou houver erro na leitura.
-            Exception: Para outros erros inesperados durante o carregamento.
-        """
-        logging.info(f"Tentando carregar dados do arquivo: {caminho_arquivo}")
-        validar_arquivo_existe(caminho_arquivo)
-
-        _, extensao = os.path.splitext(caminho_arquivo)
-        extensao = extensao.lower()
-
-        validar_formato_suportado(extensao)
-        validar_dependencia_leitura(extensao)
-
-        # As dependências já foram validadas, então podemos ler diretamente
-        try: 
-            if extensao == '.csv':
-                df = pd.read_csv(caminho_arquivo)
-            elif extensao == '.xlsx':
-                
-                df = pd.read_excel(caminho_arquivo, sheet_name=aba)
-            elif extensao == '.parquet':
-                df = pd.read_parquet(caminho_arquivo)
-            elif extensao == '.json':
-                df = pd.read_json(caminho_arquivo)
-
-            logging.info(f"Arquivo {caminho_arquivo} carregado com sucesso. Shape: {df.shape}")
-            return df
-        except Exception as e:
-            logging.error(f"Erro ao ler o arquivo {caminho_arquivo} (formato {extensao}): {e}")
-            raise ValueError(f"Erro ao processar o arquivo {caminho_arquivo}: {e}")
 
     def preparar(self, coluna_textos: str, limite_k: int = 10, n_init = 1) -> None:
         """
@@ -153,7 +108,8 @@ class ClusterFacil():
         logging.info(f"Iniciando preparação com a coluna '{coluna_textos}' e limite K={limite_k}.")
 
         validar_coluna_existe(self.df, coluna_textos)
-        validar_parametro_limite_k(limite_k)
+        # Chama a validação genérica diretamente
+        validar_inteiro_positivo('limite_k', limite_k)
         validar_tipo_coluna_texto(self.df, coluna_textos)
 
         self.coluna_textos = coluna_textos
