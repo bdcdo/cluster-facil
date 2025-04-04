@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cluster-facil"
+version = "0.1.0"
+authors = [
+  { name="Bruno da Cunha de Oliveira", email="bruno.dcdo@gmail.com" },
+]
+description = "Uma biblioteca Python intuitiva para realizar clusterização de documentos textuais. Simplifica o processo desde a preparação dos dados e análise do número ideal de clusters (método do cotovelo) até a aplicação do algoritmo e exportação dos resultados. Ideal para agrupar grandes volumes de texto, como decisões judiciais, artigos ou comentários, de forma eficiente e com poucas linhas de código."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Text Processing :: Linguistic",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
+dependencies = [
+    "pandas",
+    "scikit-learn",
+    "nltk",
+    "matplotlib",
+    "scipy",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/bdcdo/cluster-facil"
+"Bug Tracker" = "https://github.com/bdcdo/cluster-facil/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]  # Onde encontrar os pacotes
