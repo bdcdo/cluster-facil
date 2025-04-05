@@ -1,0 +1,23 @@
+# .readthedocs.yaml
+# Arquivo de configuração do Read the Docs
+# Veja https://docs.readthedocs.io/en/stable/config-file/v2.html para detalhes
+
+# Obrigatório
+version: 2
+
+# Define o SO, versão do Python e outras ferramentas que você pode precisar
+build:
+  os: ubuntu-22.04  # Usando uma versão LTS estável do Ubuntu
+  tools:
+    python: "3.11"  # Uma versão Python estável e recente que atende >=3.8
+
+# Constrói a documentação no diretório "docs/" com Sphinx
+sphinx:
+   configuration: docs/conf.py # Caminho para o arquivo de configuração do Sphinx
+
+# Opcional, mas recomendado:
+# Declara os requisitos Python necessários para construir sua documentação
+# Veja https://docs.readthedocs.io/en/stable/guides/reproducible-builds.html
+python:
+   install:
+   - requirements: docs/requirements.txt # Instala a partir do seu arquivo de requisitos
