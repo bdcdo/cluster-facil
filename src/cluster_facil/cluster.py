@@ -4,6 +4,7 @@ from sklearn.cluster import KMeans
 from typing import Optional, List, Union
 from scipy.sparse import csr_matrix
 import logging
+import re # Importar o módulo re para regex
 
 from .utils import (
     stop_words_pt,
@@ -84,6 +85,27 @@ class ClusterFacil():
         self._ultimo_num_clusters: Optional[int] = None
         self._ultima_coluna_cluster: Optional[str] = None
         self._vectorizer: Optional[TfidfVectorizer] = None # Guardar o vectorizer para reuso
+
+        # Ajustar rodada_clusterizacao com base nas colunas existentes
+        self._ajustar_rodada_inicial()
+
+    def _ajustar_rodada_inicial(self):
+        """Verifica colunas existentes e ajusta a rodada de clusterização inicial."""
+        max_rodada_existente = 0
+        regex_coluna_cluster = re.compile(r'^cluster_(\d+)$')
+        for col in self.df.columns:
+            match = regex_coluna_cluster.match(col)
+            if match:
+                rodada_num = int(match.group(1))
+                if rodada_num > max_rodada_existente:
+                    max_rodada_existente = rodada_num
+        
+        if max_rodada_existente > 0:
+            self.rodada_clusterizacao = max_rodada_existente + 1
+            logging.info(f"Colunas de cluster existentes detectadas. Próxima rodada será: {self.rodada_clusterizacao}")
+        else:
+            logging.info("Nenhuma coluna de cluster pré-existente encontrada. Iniciando na rodada 1.")
+            self.rodada_clusterizacao = 1 # Garante que seja 1 se nenhuma for encontrada
 
     # --- Métodos Privados Auxiliares ---
     def _preparar_dados_rodada_atual(self) -> Optional[pd.Index]:
@@ -470,3 +492,44 @@ class ClusterFacil():
 
         logging.info(f"'Finaliza' concluído para a rodada {self.rodada_clusterizacao - 1}. Status de salvamento: {status_salvamento}")
         return status_salvamento
+
+    def resetar(self) -> None:
+        """
+        Reseta o estado da instância ClusterFacil.
+
+        Remove todas as colunas de cluster ('cluster_1', 'cluster_2', etc.) e
+        a coluna 'classificacao' (se existir) do DataFrame. Redefine o contador
+        de rodadas para 1 e limpa os resultados e configurações de clusterizações
+        anteriores (matriz TF-IDF, inércias, vectorizer, coluna de textos).
+
+        Após chamar `resetar`, será necessário chamar `preparar` novamente antes
+        de poder `clusterizar` ou `finalizar`.
+        """
+        logging.warning("Iniciando reset do estado do ClusterFacil...")
+
+        colunas_para_remover = []
+        regex_coluna_cluster = re.compile(r'^cluster_\d+$')
+
+        for col in self.df.columns:
+            if regex_coluna_cluster.match(col):
+                colunas_para_remover.append(col)
+
+        if 'classificacao' in self.df.columns:
+             colunas_para_remover.append('classificacao') # Também remove a coluna de classificação
+
+        if colunas_para_remover:
+            self.df.drop(columns=colunas_para_remover, inplace=True, errors='ignore')
+            logging.info(f"Colunas removidas durante o reset: {colunas_para_remover}")
+        else:
+            logging.info("Nenhuma coluna de cluster ou classificação encontrada para remover.")
+
+        # Resetar atributos de estado
+        self.rodada_clusterizacao = 1
+        self.coluna_textos = None
+        self.X = None
+        self.inercias = None
+        self._ultimo_num_clusters = None
+        self._ultima_coluna_cluster = None
+        self._vectorizer = None
+
+        logging.info("Estado do ClusterFacil resetado. Rodada definida para 1. Chame 'preparar' novamente.")
