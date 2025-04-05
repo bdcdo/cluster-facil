@@ -19,7 +19,8 @@ from .validations import (
     validar_coluna_existe,
     validar_inteiro_positivo,
     validar_dependencia,
-    validar_dependencia_leitura # Adicionado para uso em salvar_dataframe
+    validar_dependencia_leitura, # Adicionado para uso em salvar_dataframe
+    validar_formato_salvar # Importado para determinar_caminhos_saida
 )
 
 # --- Configuração de Logging ---
@@ -196,6 +197,110 @@ def calcular_e_plotar_cotovelo(X: csr_matrix, limite_k: int, n_init: int = 1, pl
     return inercias
 
 # --- Funções de Salvamento de Dados ---
+
+def determinar_caminhos_saida(
+    o_que_salvar: str,
+    formato_tudo: str,
+    formato_amostras: str,
+    caminho_tudo: Optional[str],
+    caminho_amostras: Optional[str],
+    diretorio_saida: Optional[str],
+    input_path: Optional[str], # Para nome base padrão
+    rodada_a_salvar: int
+) -> dict[str, Optional[str]]:
+    """
+    Determina os caminhos e formatos finais para salvar os resultados.
+
+    Encapsula a lógica de decisão de nomes/caminhos baseada nos parâmetros
+    fornecidos e nos padrões.
+
+    Args:
+        o_que_salvar (str): 'tudo', 'amostras', ou 'ambos'.
+        formato_tudo (str): Formato padrão para DataFrame completo ('csv', 'xlsx', etc.).
+        formato_amostras (str): Formato padrão para amostras ('xlsx', 'csv', etc.).
+        caminho_tudo (Optional[str]): Caminho explícito para DataFrame completo.
+        caminho_amostras (Optional[str]): Caminho explícito para amostras.
+        diretorio_saida (Optional[str]): Diretório padrão para salvar.
+        input_path (Optional[str]): Caminho do arquivo de entrada original (para nome base).
+        rodada_a_salvar (int): Número da rodada sendo salva.
+
+    Returns:
+        dict[str, Optional[str]]: Dicionário contendo:
+            'path_tudo_final': Caminho absoluto final para o DataFrame completo (ou None).
+            'fmt_tudo_final': Formato final para o DataFrame completo (ou None).
+            'path_amostras_final': Caminho absoluto final para as amostras (ou None).
+            'fmt_amostras_final': Formato final para as amostras (ou None).
+
+    Raises:
+        ValueError: Se algum formato fornecido (explícito ou padrão) for inválido.
+    """
+    logging.debug("Determinando caminhos e formatos de saída...")
+    path_tudo_final: Optional[str] = None
+    path_amostras_final: Optional[str] = None
+    fmt_tudo_final = formato_tudo.lower()
+    fmt_amostras_final = formato_amostras.lower()
+
+    # Lógica para nome base padrão
+    nome_base_padrao = "clusters" # Default se não houver input_path
+    if input_path:
+        try:
+            base = os.path.basename(input_path)
+            nome_base_padrao, _ = os.path.splitext(base)
+        except Exception:
+            logging.warning(f"Não foi possível extrair nome base de '{input_path}'. Usando nome padrão 'clusters'.")
+
+    # Determinar caminho/formato para DataFrame Completo
+    if o_que_salvar in ['tudo', 'ambos']:
+        if caminho_tudo:
+            logging.info(f"Usando caminho explícito para DataFrame completo: {caminho_tudo}")
+            # Extrai formato da extensão, se houver, e valida
+            _, ext = os.path.splitext(caminho_tudo)
+            fmt_detectado = ext[1:].lower() if ext else None
+            if fmt_detectado:
+                validar_formato_salvar(fmt_detectado, 'tudo') # Valida o formato detectado
+                fmt_tudo_final = fmt_detectado
+                path_tudo_final = caminho_tudo
+            else:
+                # Se não há extensão, usa formato_tudo padrão e adiciona extensão
+                validar_formato_salvar(fmt_tudo_final, 'tudo') # Valida o formato padrão
+                path_tudo_final = f"{caminho_tudo}.{fmt_tudo_final}"
+                logging.info(f"Adicionando extensão .{fmt_tudo_final} ao caminho explícito.")
+        else:
+            # Usa nome padrão
+            validar_formato_salvar(fmt_tudo_final, 'tudo') # Valida o formato padrão
+            nome_arquivo = f"{nome_base_padrao}_clusters_{rodada_a_salvar}.{fmt_tudo_final}"
+            path_tudo_final = os.path.join(diretorio_saida or '.', nome_arquivo)
+            logging.info(f"Usando caminho padrão para DataFrame completo: {path_tudo_final}")
+
+    # Determinar caminho/formato para Amostras
+    if o_que_salvar in ['amostras', 'ambos']:
+         if caminho_amostras:
+            logging.info(f"Usando caminho explícito para amostras: {caminho_amostras}")
+            _, ext = os.path.splitext(caminho_amostras)
+            fmt_detectado = ext[1:].lower() if ext else None
+            if fmt_detectado:
+                validar_formato_salvar(fmt_detectado, 'amostras') # Valida o formato detectado
+                fmt_amostras_final = fmt_detectado
+                path_amostras_final = caminho_amostras
+            else:
+                # Se não há extensão, usa formato_amostras padrão e adiciona extensão
+                validar_formato_salvar(fmt_amostras_final, 'amostras') # Valida o formato padrão
+                path_amostras_final = f"{caminho_amostras}.{fmt_amostras_final}"
+                logging.info(f"Adicionando extensão .{fmt_amostras_final} ao caminho explícito.")
+         else:
+            # Usa nome padrão
+            validar_formato_salvar(fmt_amostras_final, 'amostras') # Valida o formato padrão
+            nome_arquivo = f"{nome_base_padrao}_amostras_{rodada_a_salvar}.{fmt_amostras_final}"
+            path_amostras_final = os.path.join(diretorio_saida or '.', nome_arquivo)
+            logging.info(f"Usando caminho padrão para amostras: {path_amostras_final}")
+
+    return {
+        'path_tudo_final': os.path.abspath(path_tudo_final) if path_tudo_final else None,
+        'fmt_tudo_final': fmt_tudo_final if path_tudo_final else None,
+        'path_amostras_final': os.path.abspath(path_amostras_final) if path_amostras_final else None,
+        'fmt_amostras_final': fmt_amostras_final if path_amostras_final else None
+    }
+
 
 def salvar_dataframe(df: pd.DataFrame, caminho_arquivo: str, formato: str) -> bool:
     """

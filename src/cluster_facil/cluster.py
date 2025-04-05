@@ -1,21 +1,19 @@
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import KMeans
-from typing import Optional, List, Union # Union já estava aqui
+from typing import Optional, List, Union
 from scipy.sparse import csr_matrix
 import logging
-import re # Importar o módulo re para regex
-import os # Adicionado para manipulação de caminhos
+import re
+import os
 
 from .utils import (
     stop_words_pt,
     calcular_e_plotar_cotovelo,
-    # salvar_dataframe_csv, # Removido
-    # salvar_amostras_excel, # Removido
-    # preparar_caminhos_saida, # Removido
-    salvar_dataframe, # Adicionado
-    salvar_amostras, # Adicionado
-    carregar_dados
+    salvar_dataframe,
+    salvar_amostras,
+    carregar_dados,
+    determinar_caminhos_saida # Importa a nova função
 )
 from .validations import (
     validar_entrada_inicial,
@@ -32,8 +30,8 @@ from .validations import (
     validar_rodada_valida,
     validar_cluster_ids_presentes,
     validar_tipo_classificacao,
-    validar_opcao_salvar, # Adicionado
-    validar_formato_salvar # Adicionado
+    validar_opcao_salvar,
+    validar_formato_salvar
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -78,14 +76,12 @@ class ClusterFacil():
 
         if isinstance(entrada, pd.DataFrame):
             self.df: pd.DataFrame = entrada.copy() # Copiar para evitar modificar o original inesperadamente
+            self._input_path: Optional[str] = None
             logging.info("ClusterFacil inicializado com DataFrame existente.")
         elif isinstance(entrada, str): # Sabemos que é string por causa da validação
             self.df: pd.DataFrame = carregar_dados(entrada, aba=aba)
             logging.info(f"ClusterFacil inicializado com dados do arquivo: {entrada}" + (f" (aba: {aba})" if aba else ""))
             self._input_path: Optional[str] = entrada # Guarda o caminho de entrada
-        else:
-             # Se inicializado com DataFrame, não há caminho de entrada
-             self._input_path: Optional[str] = None
 
         self.rodada_clusterizacao: int = 1
         self.coluna_textos: Optional[str] = None
@@ -133,7 +129,7 @@ class ClusterFacil():
                                 Retorna self.df.index se todas as linhas forem usadas.
         """
         df_para_clusterizar = self.df
-        indices_originais = self.df.index # Guarda todos os índices por padrão
+        indices_originais = self.df.index # Guarda todos os índices por padrão -
 
         # Lógica de Filtragem para Rodadas > 1
         if self.rodada_clusterizacao > 1 and 'classificacao' in self.df.columns:
@@ -451,79 +447,40 @@ class ClusterFacil():
             validar_coluna_cluster_existe(self.df, nome_coluna_cluster)
             validar_opcao_salvar(o_que_salvar)
 
-            # --- Determinar Caminhos e Formatos Finais ---
-            path_tudo_final: Optional[str] = None
-            path_amostras_final: Optional[str] = None
-            fmt_tudo_final = formato_tudo.lower()
-            fmt_amostras_final = formato_amostras.lower()
+            # --- Determinar Caminhos e Formatos Finais (usando a função de utils) ---
+            # A validação de formato (validar_formato_salvar) agora ocorre dentro de determinar_caminhos_saida
+            caminhos_formatos = determinar_caminhos_saida(
+                o_que_salvar=o_que_salvar,
+                formato_tudo=formato_tudo,
+                formato_amostras=formato_amostras,
+                caminho_tudo=caminho_tudo,
+                caminho_amostras=caminho_amostras,
+                diretorio_saida=diretorio_saida,
+                input_path=self._input_path,
+                rodada_a_salvar=rodada_a_salvar
+            )
 
-            # Lógica para nome base padrão
-            nome_base_padrao = "clusters" # Default se não houver input_path
-            if self._input_path:
-                try:
-                    base = os.path.basename(self._input_path)
-                    nome_base_padrao, _ = os.path.splitext(base)
-                except Exception:
-                    logging.warning(f"Não foi possível extrair nome base de '{self._input_path}'. Usando nome padrão 'clusters'.")
-
-            # Determinar caminho/formato para DataFrame Completo
-            if o_que_salvar in ['tudo', 'ambos']:
-                if caminho_tudo:
-                    logging.info(f"Usando caminho explícito para DataFrame completo: {caminho_tudo}")
-                    # Extrai formato da extensão, se houver, e valida
-                    _, ext = os.path.splitext(caminho_tudo)
-                    fmt_detectado = ext[1:].lower() if ext else None
-                    if fmt_detectado:
-                        validar_formato_salvar(fmt_detectado, 'tudo')
-                        fmt_tudo_final = fmt_detectado
-                        path_tudo_final = caminho_tudo
-                    else:
-                        # Se não há extensão, usa formato_tudo e adiciona extensão
-                        validar_formato_salvar(fmt_tudo_final, 'tudo')
-                        path_tudo_final = f"{caminho_tudo}.{fmt_tudo_final}"
-                        logging.info(f"Adicionando extensão .{fmt_tudo_final} ao caminho explícito.")
-                else:
-                    # Usa nome padrão
-                    validar_formato_salvar(fmt_tudo_final, 'tudo')
-                    nome_arquivo = f"{nome_base_padrao}_clusters_{rodada_a_salvar}.{fmt_tudo_final}"
-                    path_tudo_final = os.path.join(diretorio_saida or '.', nome_arquivo)
-                    logging.info(f"Usando caminho padrão para DataFrame completo: {path_tudo_final}")
-
-            # Determinar caminho/formato para Amostras
-            if o_que_salvar in ['amostras', 'ambos']:
-                 if caminho_amostras:
-                    logging.info(f"Usando caminho explícito para amostras: {caminho_amostras}")
-                    _, ext = os.path.splitext(caminho_amostras)
-                    fmt_detectado = ext[1:].lower() if ext else None
-                    if fmt_detectado:
-                        validar_formato_salvar(fmt_detectado, 'amostras')
-                        fmt_amostras_final = fmt_detectado
-                        path_amostras_final = caminho_amostras
-                    else:
-                        validar_formato_salvar(fmt_amostras_final, 'amostras')
-                        path_amostras_final = f"{caminho_amostras}.{fmt_amostras_final}"
-                        logging.info(f"Adicionando extensão .{fmt_amostras_final} ao caminho explícito.")
-                 else:
-                    # Usa nome padrão
-                    validar_formato_salvar(fmt_amostras_final, 'amostras')
-                    nome_arquivo = f"{nome_base_padrao}_amostras_{rodada_a_salvar}.{fmt_amostras_final}"
-                    path_amostras_final = os.path.join(diretorio_saida or '.', nome_arquivo)
-                    logging.info(f"Usando caminho padrão para amostras: {path_amostras_final}")
+            path_tudo_final = caminhos_formatos['path_tudo_final']
+            fmt_tudo_final = caminhos_formatos['fmt_tudo_final']
+            path_amostras_final = caminhos_formatos['path_amostras_final']
+            fmt_amostras_final = caminhos_formatos['fmt_amostras_final']
 
             # --- Executar Salvamento ---
-            if path_tudo_final:
+            if path_tudo_final and fmt_tudo_final:
                 sucesso_tudo = salvar_dataframe(self.df, path_tudo_final, fmt_tudo_final)
                 resultados_salvamento['tudo_salvo'] = sucesso_tudo
-                resultados_salvamento['caminho_tudo'] = os.path.abspath(path_tudo_final) if sucesso_tudo else None
+                # O caminho já vem absoluto de determinar_caminhos_saida
+                resultados_salvamento['caminho_tudo'] = path_tudo_final if sucesso_tudo else None
 
-            if path_amostras_final:
+            if path_amostras_final and fmt_amostras_final:
                 # salvar_amostras internamente chama salvar_dataframe
                 sucesso_amostras = salvar_amostras(self.df, nome_coluna_cluster, num_clusters, path_amostras_final, fmt_amostras_final)
                 resultados_salvamento['amostras_salvas'] = sucesso_amostras
-                resultados_salvamento['caminho_amostras'] = os.path.abspath(path_amostras_final) if sucesso_amostras else None
+                # O caminho já vem absoluto de determinar_caminhos_saida
+                resultados_salvamento['caminho_amostras'] = path_amostras_final if sucesso_amostras else None
 
         except (RuntimeError, KeyError, ValueError, ImportError, OSError) as e:
-             # Captura erros de validação, estado, IO, dependência
+             # Captura erros de validação (incluindo formato), estado, IO, dependência
              logging.error(f"Falha no processo de salvamento: {e}")
              # Retorna o dicionário com False/None (estado inicial)
              return resultados_salvamento
