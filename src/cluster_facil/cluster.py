@@ -85,6 +85,7 @@ class ClusterFacil():
         self._ultimo_num_clusters: Optional[int] = None
         self._ultima_coluna_cluster: Optional[str] = None
         self._vectorizer: Optional[TfidfVectorizer] = None # Guardar o vectorizer para reuso
+        self._tfidf_kwargs: Optional[dict] = None # Guardar kwargs do TF-IDF para referência
 
         # Ajustar rodada_clusterizacao com base nas colunas existentes
         self._ajustar_rodada_inicial()
@@ -237,7 +238,7 @@ class ClusterFacil():
 
 
     # --- Métodos Públicos ---
-    def preparar(self, coluna_textos: str, limite_k: int = 10, n_init: int = 1, plotar_cotovelo: bool = True) -> None:
+    def preparar(self, coluna_textos: str, limite_k: int = 10, n_init: int = 1, plotar_cotovelo: bool = True, **tfidf_kwargs) -> None:
         """
         Prepara os dados para clusterização.
 
@@ -261,6 +262,10 @@ class ClusterFacil():
                                     as inércias para o gráfico do cotovelo. Default é 1.
             plotar_cotovelo (bool, optional): Se True (padrão), exibe o gráfico do método
                                               do cotovelo. Default é True.
+            **tfidf_kwargs: Argumentos de palavra-chave adicionais a serem passados
+                            diretamente para o construtor `sklearn.feature_extraction.text.TfidfVectorizer`.
+                            Permite configurar parâmetros como `min_df`, `max_df`, `ngram_range`, etc.
+                            Ex: `preparar(..., min_df=5, ngram_range=(1, 2))`
 
         Raises:
             KeyError: Se o nome da coluna `coluna_textos` não existir no DataFrame.
@@ -278,12 +283,17 @@ class ClusterFacil():
         textos_processados = self.df[self.coluna_textos].fillna('').astype(str).str.lower()
 
         logging.info("Calculando TF-IDF inicial...")
-        # TODO (Roadmap): Permitir configuração de parâmetros do TfidfVectorizer.
-        self._vectorizer = TfidfVectorizer(stop_words=stop_words_pt)
+        self._tfidf_kwargs = tfidf_kwargs # Armazena os kwargs passados
+        # Define parâmetros padrão que podem ser sobrescritos pelos kwargs
+        default_tfidf_params = {'stop_words': stop_words_pt}
+        final_tfidf_kwargs = {**default_tfidf_params, **self._tfidf_kwargs} # kwargs do usuário têm precedência
+        logging.info(f"Parâmetros finais para TfidfVectorizer: {final_tfidf_kwargs}")
+        self._vectorizer = TfidfVectorizer(**final_tfidf_kwargs)
         self.X = self._vectorizer.fit_transform(textos_processados)
         logging.info(f"Matriz TF-IDF inicial calculada com shape: {self.X.shape}")
 
         # TODO (Roadmap): Avaliar uso de n_init > 1 para o gráfico do cotovelo.
+        # TODO (Roadmap): Permitir passar kwargs para o KMeans do cotovelo.
         self.inercias = calcular_e_plotar_cotovelo(self.X, limite_k, n_init, plotar=plotar_cotovelo)
 
         if self.inercias is not None:
@@ -292,9 +302,9 @@ class ClusterFacil():
              else:
                  logging.info("Preparação concluída. Inércias calculadas, mas gráfico não exibido (plotar_cotovelo=False).")
         else:
-             logging.info("Preparação concluída (sem dados para o método do cotovelo).")
+                 logging.info("Preparação concluída (sem dados para o método do cotovelo).")
 
-    def clusterizar(self, num_clusters: int) -> str:
+    def clusterizar(self, num_clusters: int, **kmeans_kwargs) -> str:
         """
         Executa a clusterização K-Means e adiciona a coluna de clusters ao DataFrame.
 
@@ -307,6 +317,13 @@ class ClusterFacil():
 
         Args:
             num_clusters (int): O número de clusters (K) a ser usado.
+            **kmeans_kwargs: Argumentos de palavra-chave adicionais a serem passados
+                             diretamente para o construtor `sklearn.cluster.KMeans`.
+                             Permite configurar parâmetros como `max_iter`, `tol`, etc.
+                             O `n_clusters` é definido pelo argumento obrigatório, e
+                             `random_state` e `n_init` têm padrões internos, mas todos
+                             podem ser sobrescritos se incluídos nos `kmeans_kwargs`.
+                             Ex: `clusterizar(..., max_iter=500, tol=1e-5)`
 
         Returns:
             str: O nome da coluna de cluster criada (ex: 'cluster_1').
@@ -335,8 +352,11 @@ class ClusterFacil():
         validar_parametro_num_clusters(num_clusters, num_amostras_atual)
 
         logging.info(f"Executando K-Means com {num_clusters} clusters em {num_amostras_atual} amostras...")
-        # TODO (Roadmap): Permitir configuração de parâmetros do KMeans.
-        kmeans = KMeans(n_clusters=num_clusters, random_state=42, n_init='auto')
+        # Define parâmetros padrão que podem ser sobrescritos pelos kwargs
+        default_kmeans_params = {'n_clusters': num_clusters, 'random_state': 42, 'n_init': 'auto'}
+        final_kmeans_kwargs = {**default_kmeans_params, **kmeans_kwargs} # kwargs do usuário têm precedência
+        logging.info(f"Parâmetros finais para KMeans: {final_kmeans_kwargs}")
+        kmeans = KMeans(**final_kmeans_kwargs)
         try:
             cluster_labels = kmeans.fit_predict(self.X)
             logging.info(f"K-Means concluído. {len(cluster_labels)} labels gerados.")
