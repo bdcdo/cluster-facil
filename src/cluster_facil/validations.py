@@ -157,3 +157,37 @@ def validar_estado_clusterizado(instance: 'ClusterFacil') -> None:
         msg = "Nenhuma clusterização foi realizada ainda. Execute o método 'clusterizar' primeiro."
         logging.error(msg)
         raise RuntimeError(msg)
+
+# --- Validações para 'salvar' ---
+def validar_opcao_salvar(opcao: str) -> None:
+    """Valida se a opção para o parâmetro 'o_que_salvar' é válida."""
+    opcoes_validas = ['tudo', 'amostras', 'ambos']
+    if opcao not in opcoes_validas:
+        msg = f"Opção inválida para 'o_que_salvar': '{opcao}'. Use uma das opções: {opcoes_validas}."
+        logging.error(msg)
+        raise ValueError(msg)
+
+def validar_formato_salvar(formato: str, tipo: str) -> None:
+    """Valida se o formato de arquivo para salvar é suportado para o tipo especificado."""
+    formatos_tudo = ['csv', 'xlsx', 'parquet', 'json']
+    formatos_amostras = ['xlsx', 'csv', 'json']
+
+    if tipo == 'tudo':
+        if formato not in formatos_tudo:
+            msg = f"Formato inválido para 'formato_tudo': '{formato}'. Use um dos formatos: {formatos_tudo}."
+            logging.error(msg)
+            raise ValueError(msg)
+        # Valida dependências para formatos específicos (ex: pyarrow para parquet)
+        validar_dependencia_leitura(f".{formato}") # Reutiliza validação de dependência de leitura
+    elif tipo == 'amostras':
+        if formato not in formatos_amostras:
+            msg = f"Formato inválido para 'formato_amostras': '{formato}'. Use um dos formatos: {formatos_amostras}."
+            logging.error(msg)
+            raise ValueError(msg)
+        # Valida dependências para formatos específicos (ex: openpyxl para xlsx)
+        validar_dependencia_leitura(f".{formato}") # Reutiliza validação de dependência de leitura
+    else:
+        # Erro interno se o tipo de validação for inesperado
+        msg = f"Tipo de validação de formato desconhecido: '{tipo}'."
+        logging.error(msg)
+        raise ValueError(msg)

@@ -1,17 +1,20 @@
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import KMeans
-from typing import Optional, List, Union
+from typing import Optional, List, Union # Union já estava aqui
 from scipy.sparse import csr_matrix
 import logging
 import re # Importar o módulo re para regex
+import os # Adicionado para manipulação de caminhos
 
 from .utils import (
     stop_words_pt,
     calcular_e_plotar_cotovelo,
-    salvar_dataframe_csv,
-    salvar_amostras_excel,
-    preparar_caminhos_saida,
+    # salvar_dataframe_csv, # Removido
+    # salvar_amostras_excel, # Removido
+    # preparar_caminhos_saida, # Removido
+    salvar_dataframe, # Adicionado
+    salvar_amostras, # Adicionado
     carregar_dados
 )
 from .validations import (
@@ -26,9 +29,11 @@ from .validations import (
     validar_parametro_num_clusters,
     validar_estado_clusterizado,
     validar_coluna_cluster_existe,
-    validar_rodada_valida,        
-    validar_cluster_ids_presentes, 
-    validar_tipo_classificacao     
+    validar_rodada_valida,
+    validar_cluster_ids_presentes,
+    validar_tipo_classificacao,
+    validar_opcao_salvar, # Adicionado
+    validar_formato_salvar # Adicionado
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -61,7 +66,7 @@ class ClusterFacil():
                                                  com os textos a serem clusterizados.
             aba (Optional[str], optional): O nome ou índice da aba a ser lida caso a entrada
                                            seja um caminho para um arquivo Excel (.xlsx).
-                                           Se None (padrão), lê a primeira aba. Default é None.
+                                           Se None (padrão), lê a primeira aba. Padrão é None.
 
         Raises:
             TypeError: Se a entrada não for um DataFrame ou uma string.
@@ -77,6 +82,10 @@ class ClusterFacil():
         elif isinstance(entrada, str): # Sabemos que é string por causa da validação
             self.df: pd.DataFrame = carregar_dados(entrada, aba=aba)
             logging.info(f"ClusterFacil inicializado com dados do arquivo: {entrada}" + (f" (aba: {aba})" if aba else ""))
+            self._input_path: Optional[str] = entrada # Guarda o caminho de entrada
+        else:
+             # Se inicializado com DataFrame, não há caminho de entrada
+             self._input_path: Optional[str] = None
 
         self.rodada_clusterizacao: int = 1
         self.coluna_textos: Optional[str] = None
@@ -257,13 +266,13 @@ class ClusterFacil():
         Args:
             coluna_textos (str): O nome da coluna no DataFrame que contém os textos.
             limite_k (int, optional): O número máximo de clusters (K) a ser testado
-                                       no método do cotovelo. Default é 10.
+                                       no método do cotovelo. Padrão é 10.
             n_init (int, optional): O número de inicializações do K-Means ao calcular
-                                    as inércias para o gráfico do cotovelo. Default é 1.
+                                    as inércias para o gráfico do cotovelo. Padrão é 1.
             plotar_cotovelo (bool, optional): Se True (padrão), exibe o gráfico do método
-                                              do cotovelo. Default é True.
+                                              do cotovelo. Padrão é True.
             **tfidf_kwargs: Argumentos de palavra-chave adicionais a serem passados
-                            diretamente para o construtor `sklearn.feature_extraction.text.TfidfVectorizer`.
+                            diretamente para o construtor `TfidfVectorizer`.
                             Permite configurar parâmetros como `min_df`, `max_df`, `ngram_range`, etc.
                             Ex: `preparar(..., min_df=5, ngram_range=(1, 2))`
 
@@ -375,52 +384,157 @@ class ClusterFacil():
         logging.info(f"Clusterização da rodada {self.rodada_clusterizacao - 1} concluída com sucesso.")
         return nome_coluna_cluster
 
-    def salvar(self, prefixo_saida: str = '', diretorio_saida: Optional[str] = None) -> dict[str, bool]:
+    def salvar(self,
+               o_que_salvar: str = 'ambos',
+               formato_tudo: str = 'csv',
+               formato_amostras: str = 'xlsx',
+               caminho_tudo: Optional[str] = None,
+               caminho_amostras: Optional[str] = None,
+               diretorio_saida: Optional[str] = None
+               ) -> dict[str, Union[bool, Optional[str]]]:
         """
-        Salva os resultados da última clusterização realizada.
+        Salva os resultados da última clusterização realizada, com opções flexíveis.
 
-        Gera dois arquivos:
-        1. Um arquivo CSV contendo o DataFrame completo com a(s) coluna(s) de cluster.
-        2. Um arquivo Excel contendo até 10 amostras aleatórias de cada cluster gerado
-           na última rodada, facilitando a inspeção rápida dos grupos.
+        Permite salvar o DataFrame completo, as amostras por cluster, ou ambos,
+        em diferentes formatos e com nomes/caminhos de arquivo personalizados ou padrão.
 
         Args:
-            prefixo_saida (str, optional): Prefixo para os nomes dos arquivos de saída. Default ''.
-            diretorio_saida (Optional[str], optional): Caminho da pasta onde salvar os arquivos.
-                                                      Se None (padrão), salva no diretório atual. Default None.
+            o_que_salvar (str, optional): O que salvar: 'tudo' (DataFrame completo),
+                                          'amostras', ou 'ambos'. Padrão é 'ambos'.
+            formato_tudo (str, optional): Formato para o DataFrame completo: 'csv',
+                                          'xlsx', 'parquet', 'json'. Padrão é 'csv'.
+            formato_amostras (str, optional): Formato para as amostras: 'xlsx',
+                                             'csv', 'json'. Padrão é 'xlsx'.
+            caminho_tudo (Optional[str], optional): Caminho completo (incluindo nome e, opcionalmente,
+                                                    extensão) para salvar o DataFrame completo.
+                                                    Se fornecido, ignora `diretorio_saida`. Se a extensão
+                                                    for omitida, será adicionada com base em `formato_tudo`.
+                                                    Padrão é None (usa nome padrão).
+            caminho_amostras (Optional[str], optional): Caminho completo para salvar as
+                                                       amostras. Se fornecido, ignora
+                                                       `diretorio_saida`. Se a extensão for omitida,
+                                                       será adicionada com base em `formato_amostras`.
+                                                       Padrão é None (usa nome padrão).
+            diretorio_saida (Optional[str], optional): Pasta onde salvar os arquivos com
+                                                      nomes padrão. Se None (padrão), salva no
+                                                      diretório atual. Usado apenas se
+                                                      `caminho_tudo` ou `caminho_amostras`
+                                                      não forem fornecidos. Padrão é None.
 
         Returns:
-            dict[str, bool]: Um dicionário indicando o sucesso do salvamento de cada arquivo.
-                             Ex: {'csv_salvo': True, 'excel_salvo': False}
+            dict[str, Union[bool, Optional[str]]]: Dicionário com o status (True/False) e caminho absoluto
+                                                   de cada tipo de arquivo que foi salvo (ou tentou ser salvo).
+                                                   Ex: `{'tudo_salvo': True, 'caminho_tudo': '/caminho/abs/df.csv', 'amostras_salvas': False, 'caminho_amostras': None}`
+
+        Raises:
+            RuntimeError: Se nenhuma clusterização foi realizada ainda (`clusterizar` não foi chamado).
+            KeyError: Se a coluna de cluster da última rodada não for encontrada no DataFrame.
+            ValueError: Se alguma opção (`o_que_salvar`, `formato_tudo`, `formato_amostras`) for inválida,
+                        ou se a extensão em `caminho_tudo`/`caminho_amostras` (se fornecida) for
+                        incompatível com os formatos permitidos.
+            ImportError: Se uma dependência necessária para o formato de arquivo escolhido
+                         (ex: `openpyxl` para `.xlsx`, `pyarrow` para `.parquet`) não estiver instalada.
+            OSError: Se houver um erro ao tentar criar o `diretorio_saida` (ex: permissão negada).
         """
-        logging.info("Tentando salvar resultados da última clusterização...")
+        logging.info(f"Iniciando processo de salvamento (o_que_salvar='{o_que_salvar}')...")
+        resultados_salvamento = {
+            'tudo_salvo': False, 'caminho_tudo': None,
+            'amostras_salvas': False, 'caminho_amostras': None
+        }
 
         try:
+            # --- Validações Iniciais ---
             validar_estado_clusterizado(self)
             rodada_a_salvar = self.rodada_clusterizacao - 1
             nome_coluna_cluster = self._ultima_coluna_cluster
             num_clusters = self._ultimo_num_clusters
-            validar_coluna_cluster_existe(self.df, nome_coluna_cluster) # Verificação de segurança
-        except (RuntimeError, KeyError) as e:
-             # Se a validação falhar (RuntimeError de estado, KeyError de coluna), retorna falha
-             logging.error(f"Não é possível salvar: {e}")
-             return {'csv_salvo': False, 'excel_salvo': False}
+            validar_coluna_cluster_existe(self.df, nome_coluna_cluster)
+            validar_opcao_salvar(o_que_salvar)
 
-        try:
-            caminhos = preparar_caminhos_saida(diretorio_saida, prefixo_saida, rodada_a_salvar)
-            nome_csv = caminhos['caminho_csv']
-            nome_excel = caminhos['caminho_excel']
-        except OSError as e:
-            # Se preparar_caminhos_saida falhar (ex: problema de permissão), retorna falha
-            logging.error(f"Falha ao preparar diretório/caminhos de saída: {e}")
-            return {'csv_salvo': False, 'excel_salvo': False}
+            # --- Determinar Caminhos e Formatos Finais ---
+            path_tudo_final: Optional[str] = None
+            path_amostras_final: Optional[str] = None
+            fmt_tudo_final = formato_tudo.lower()
+            fmt_amostras_final = formato_amostras.lower()
 
-        sucesso_csv = salvar_dataframe_csv(self.df, nome_csv)
-        sucesso_excel = salvar_amostras_excel(self.df, nome_coluna_cluster, num_clusters, nome_excel)
+            # Lógica para nome base padrão
+            nome_base_padrao = "clusters" # Default se não houver input_path
+            if self._input_path:
+                try:
+                    base = os.path.basename(self._input_path)
+                    nome_base_padrao, _ = os.path.splitext(base)
+                except Exception:
+                    logging.warning(f"Não foi possível extrair nome base de '{self._input_path}'. Usando nome padrão 'clusters'.")
 
-        status_salvamento = {'csv_salvo': sucesso_csv, 'excel_salvo': sucesso_excel}
-        logging.info(f"Tentativa de salvamento da rodada {rodada_a_salvar} concluída. Status: {status_salvamento}")
-        return status_salvamento
+            # Determinar caminho/formato para DataFrame Completo
+            if o_que_salvar in ['tudo', 'ambos']:
+                if caminho_tudo:
+                    logging.info(f"Usando caminho explícito para DataFrame completo: {caminho_tudo}")
+                    # Extrai formato da extensão, se houver, e valida
+                    _, ext = os.path.splitext(caminho_tudo)
+                    fmt_detectado = ext[1:].lower() if ext else None
+                    if fmt_detectado:
+                        validar_formato_salvar(fmt_detectado, 'tudo')
+                        fmt_tudo_final = fmt_detectado
+                        path_tudo_final = caminho_tudo
+                    else:
+                        # Se não há extensão, usa formato_tudo e adiciona extensão
+                        validar_formato_salvar(fmt_tudo_final, 'tudo')
+                        path_tudo_final = f"{caminho_tudo}.{fmt_tudo_final}"
+                        logging.info(f"Adicionando extensão .{fmt_tudo_final} ao caminho explícito.")
+                else:
+                    # Usa nome padrão
+                    validar_formato_salvar(fmt_tudo_final, 'tudo')
+                    nome_arquivo = f"{nome_base_padrao}_clusters_{rodada_a_salvar}.{fmt_tudo_final}"
+                    path_tudo_final = os.path.join(diretorio_saida or '.', nome_arquivo)
+                    logging.info(f"Usando caminho padrão para DataFrame completo: {path_tudo_final}")
+
+            # Determinar caminho/formato para Amostras
+            if o_que_salvar in ['amostras', 'ambos']:
+                 if caminho_amostras:
+                    logging.info(f"Usando caminho explícito para amostras: {caminho_amostras}")
+                    _, ext = os.path.splitext(caminho_amostras)
+                    fmt_detectado = ext[1:].lower() if ext else None
+                    if fmt_detectado:
+                        validar_formato_salvar(fmt_detectado, 'amostras')
+                        fmt_amostras_final = fmt_detectado
+                        path_amostras_final = caminho_amostras
+                    else:
+                        validar_formato_salvar(fmt_amostras_final, 'amostras')
+                        path_amostras_final = f"{caminho_amostras}.{fmt_amostras_final}"
+                        logging.info(f"Adicionando extensão .{fmt_amostras_final} ao caminho explícito.")
+                 else:
+                    # Usa nome padrão
+                    validar_formato_salvar(fmt_amostras_final, 'amostras')
+                    nome_arquivo = f"{nome_base_padrao}_amostras_{rodada_a_salvar}.{fmt_amostras_final}"
+                    path_amostras_final = os.path.join(diretorio_saida or '.', nome_arquivo)
+                    logging.info(f"Usando caminho padrão para amostras: {path_amostras_final}")
+
+            # --- Executar Salvamento ---
+            if path_tudo_final:
+                sucesso_tudo = salvar_dataframe(self.df, path_tudo_final, fmt_tudo_final)
+                resultados_salvamento['tudo_salvo'] = sucesso_tudo
+                resultados_salvamento['caminho_tudo'] = os.path.abspath(path_tudo_final) if sucesso_tudo else None
+
+            if path_amostras_final:
+                # salvar_amostras internamente chama salvar_dataframe
+                sucesso_amostras = salvar_amostras(self.df, nome_coluna_cluster, num_clusters, path_amostras_final, fmt_amostras_final)
+                resultados_salvamento['amostras_salvas'] = sucesso_amostras
+                resultados_salvamento['caminho_amostras'] = os.path.abspath(path_amostras_final) if sucesso_amostras else None
+
+        except (RuntimeError, KeyError, ValueError, ImportError, OSError) as e:
+             # Captura erros de validação, estado, IO, dependência
+             logging.error(f"Falha no processo de salvamento: {e}")
+             # Retorna o dicionário com False/None (estado inicial)
+             return resultados_salvamento
+        except Exception as e:
+             # Captura outros erros inesperados
+             logging.error(f"Erro inesperado durante o salvamento: {e}")
+             return resultados_salvamento
+
+        logging.info(f"Processo de salvamento concluído. Status: {resultados_salvamento}")
+        return resultados_salvamento
+
 
     def classificar(self, cluster_ids: Union[int, List[int]], classificacao: str, rodada: Optional[int] = None) -> None:
         """
@@ -434,12 +548,12 @@ class ClusterFacil():
         Args:
             cluster_ids (Union[int, List[int]]): O ID do cluster ou uma lista de IDs
                                                  de clusters a serem classificados.
-            classificacao (str): O rótulo/string de classificação a ser atribuído.
+            classificacao (str): O rótulo (string) de classificação a ser atribuído.
                                  Não pode ser uma string vazia.
             rodada (Optional[int], optional): O número da rodada de clusterização
                                               cujos clusters serão classificados.
                                               Se None (padrão), usa a última rodada
-                                              de clusterização concluída. Default None.
+                                              de clusterização concluída. Padrão é None.
 
         Raises:
             RuntimeError: Se nenhuma clusterização foi realizada ainda (`clusterizar` não foi chamado).
@@ -480,35 +594,44 @@ class ClusterFacil():
         logging.info("Classificação concluída.")
 
     # --- MÉTODO DE CONVENIÊNCIA ---
-    def finalizar(self, num_clusters: int, prefixo_saida: str = '', diretorio_saida: Optional[str] = None) -> dict[str, bool]:
+    def finalizar(self, num_clusters: int, **kwargs_salvar) -> dict[str, Union[bool, Optional[str]]]:
         """
         Método de conveniência que executa a clusterização e depois salva os resultados.
 
         Equivalente a chamar `clusterizar()` seguido por `salvar()`.
-        Erros durante o salvamento dos arquivos são registrados no log e indicados no
-        retorno, mas não interrompem a execução.
+        Aceita os mesmos argumentos de palavra-chave que `salvar()` para controlar o processo.
 
         Args:
-            num_clusters (int): O número de clusters (K) a ser usado.
-            prefixo_saida (str, optional): Prefixo para os nomes dos arquivos de saída. Default ''.
-            diretorio_saida (Optional[str], optional): Caminho da pasta onde salvar os arquivos.
-                                                      Se None (padrão), salva no diretório atual. Default None.
+            num_clusters (int): O número de clusters (K) a ser usado na clusterização.
+            **kwargs_salvar: Argumentos de palavra-chave a serem passados diretamente
+                             para o método `salvar()`. Consulte a documentação de `salvar()`
+                             para ver as opções disponíveis (ex: `o_que_salvar`, `formato_tudo`,
+                             `caminho_tudo`, `diretorio_saida`, etc.).
 
         Returns:
-            dict[str, bool]: O status do salvamento dos arquivos (ver método `salvar`).
+            dict[str, Union[bool, Optional[str]]]: O dicionário retornado pelo método `salvar`,
+                                                   indicando o status e os caminhos dos arquivos.
 
         Raises:
-            RuntimeError: Se `preparar` não foi executado antes ou se não há dados.
-            ValueError: Se `num_clusters` for inválido.
+            RuntimeError: Se `preparar` não foi executado antes, se não há dados, ou se
+                          nenhuma clusterização foi realizada antes de tentar salvar.
+            ValueError: Se `num_clusters` for inválido ou se algum argumento em `kwargs_salvar`
+                        for inválido (conforme validações em `salvar`).
+            ImportError: Se uma dependência necessária para o formato de salvamento não estiver
+                         instalada (conforme validações em `salvar`).
+            OSError: Se houver erro ao criar o diretório de saída durante o salvamento
+                     (conforme validações em `salvar`).
             Exception: Outros erros durante a execução do K-Means (vindos de `clusterizar`).
         """
-        logging.info(f"Executando 'finaliza' (clusterizar e salvar) com K={num_clusters} e prefixo='{prefixo_saida}'.")
-        
-        # 1. Clusterizar (pode levantar exceção)
-        self.clusterizar(num_clusters)
+        logging.info(f"Executando 'finaliza' (clusterizar e salvar) com K={num_clusters}...")
+        logging.debug(f"Argumentos para salvar: {kwargs_salvar}")
 
-        # 2. Salvar (não levanta exceção por falha de IO, apenas loga e retorna status)
-        status_salvamento = self.salvar(prefixo_saida=prefixo_saida, diretorio_saida=diretorio_saida)
+        # 1. Clusterizar (pode levantar exceção)
+        self.clusterizar(num_clusters) # Não passa kwargs de salvar aqui
+
+        # 2. Salvar (pode levantar exceção de validação, IO, dependência)
+        # Passa os kwargs recebidos diretamente para o método salvar
+        status_salvamento = self.salvar(**kwargs_salvar)
 
         logging.info(f"'Finaliza' concluído para a rodada {self.rodada_clusterizacao - 1}. Status de salvamento: {status_salvamento}")
         return status_salvamento

@@ -4,7 +4,7 @@
 # --- Importações ---
 import logging
 import os
-from typing import List, Optional
+from typing import List, Optional, Union # Adicionado Union
 import matplotlib.pyplot as plt
 import nltk
 import pandas as pd
@@ -18,7 +18,8 @@ from .validations import (
     validar_formato_suportado,
     validar_coluna_existe,
     validar_inteiro_positivo,
-    validar_dependencia
+    validar_dependencia,
+    validar_dependencia_leitura # Adicionado para uso em salvar_dataframe
 )
 
 # --- Configuração de Logging ---
@@ -56,8 +57,9 @@ def carregar_dados(caminho_arquivo: str, aba: Optional[str] = None) -> pd.DataFr
 
     Args:
         caminho_arquivo (str): O caminho para o arquivo de dados.
-        aba (Optional[str], optional): O nome ou índice da aba a ser lida se for um arquivo Excel.
-                                       Se None, lê a primeira aba. Default é None.
+        aba (Optional[str], optional): O nome ou índice da aba a ser lida caso a entrada
+                                       seja um caminho para um arquivo Excel (.xlsx).
+                                       Se None (padrão), lê a primeira aba. Padrão é None.
 
     Returns:
         pd.DataFrame: O DataFrame carregado.
@@ -101,13 +103,13 @@ def calcular_inercias_kmeans(X: csr_matrix, limite_k: int, n_init: int = 1) -> O
     Args:
         X (csr_matrix): Matriz TF-IDF dos dados.
         limite_k (int): Número máximo de clusters (K) a testar.
-        n_init (int): Número de inicializações do K-Means.
+        n_init (int): Número de inicializações do K-Means. Padrão é 1.
 
     Returns:
         Optional[List[float]]: Lista de inércias calculadas, ou None se não houver amostras.
     """
     logging.info("Calculando inércias para o método do cotovelo...")
-    validar_inteiro_positivo('n_init', n_init)
+    validar_inteiro_positivo('n_init', n_init) # Valida o n_init recebido
 
     k_max = min(limite_k, X.shape[0])
     if k_max < limite_k:
@@ -171,8 +173,8 @@ def calcular_e_plotar_cotovelo(X: csr_matrix, limite_k: int, n_init: int = 1, pl
     Args:
         X (csr_matrix): Matriz TF-IDF dos dados.
         limite_k (int): Número máximo de clusters (K) a testar.
-        n_init (int): Número de inicializações do K-Means para cálculo da inércia.
-        plotar (bool, optional): Se True (padrão), exibe o gráfico do cotovelo. Default True.
+        n_init (int, optional): Número de inicializações do K-Means para cálculo da inércia. Padrão é 1.
+        plotar (bool, optional): Se True (padrão), exibe o gráfico do cotovelo. Padrão é True.
 
     Returns:
         Optional[List[float]]: Lista de inércias calculadas, ou None se não houver dados.
@@ -193,82 +195,82 @@ def calcular_e_plotar_cotovelo(X: csr_matrix, limite_k: int, n_init: int = 1, pl
 
     return inercias
 
-# --- Funções de Preparação de Caminhos ---
-def preparar_caminhos_saida(diretorio_saida: Optional[str], prefixo_saida: str, rodada_clusterizacao: int) -> dict[str, str]:
-    """
-    Prepara os caminhos completos para os arquivos de saída CSV e Excel.
-
-    Cria o diretório de saída se ele não existir.
-
-    Args:
-        diretorio_saida (Optional[str]): Caminho da pasta onde salvar os arquivos. Se None, usa o diretório atual.
-        prefixo_saida (str): Prefixo para os nomes dos arquivos de saída.
-        rodada_clusterizacao (int): Número da rodada de clusterização atual (usado no nome do arquivo).
-
-    Returns:
-        dict[str, str]: Dicionário contendo 'caminho_csv' e 'caminho_excel' com os caminhos completos.
-
-    Raises:
-        OSError: Se houver um erro ao tentar criar o diretório de saída.
-    """
-    logging.info(f"Preparando caminhos de saída para a rodada {rodada_clusterizacao} com prefixo '{prefixo_saida}' e diretório '{diretorio_saida or '.'}'")
-
-    prefixo_fmt = f"{prefixo_saida}_" if prefixo_saida else ""
-    nome_base_csv = f"{prefixo_fmt}clusters_{rodada_clusterizacao}.csv"
-    nome_base_excel = f"{prefixo_fmt}amostras_por_cluster_{rodada_clusterizacao}.xlsx"
-
-    if diretorio_saida:
-        try:
-            os.makedirs(diretorio_saida, exist_ok=True)
-            logging.info(f"Diretório de saída '{diretorio_saida}' verificado/criado.")
-            caminho_csv = os.path.join(diretorio_saida, nome_base_csv)
-            caminho_excel = os.path.join(diretorio_saida, nome_base_excel)
-        except OSError as e:
-            logging.error(f"Não foi possível criar ou acessar o diretório '{diretorio_saida}': {e}.")
-            raise
-    else:
-        caminho_csv = nome_base_csv
-        caminho_excel = nome_base_excel
-
-    logging.info(f"Caminho final definido para CSV: {caminho_csv}")
-    logging.info(f"Caminho final definido para Excel: {caminho_excel}")
-    return {'caminho_csv': caminho_csv, 'caminho_excel': caminho_excel}
-
 # --- Funções de Salvamento de Dados ---
-def salvar_dataframe_csv(df: pd.DataFrame, nome_arquivo: str) -> bool:
+
+def salvar_dataframe(df: pd.DataFrame, caminho_arquivo: str, formato: str) -> bool:
     """
-    Salva um DataFrame em um arquivo CSV.
+    Salva um DataFrame em um arquivo no formato especificado.
+
+    Suporta 'csv', 'xlsx', 'parquet', 'json'.
 
     Args:
         df (pd.DataFrame): O DataFrame a ser salvo.
-        nome_arquivo (str): O caminho do arquivo CSV de saída.
+        caminho_arquivo (str): O caminho completo do arquivo de saída (incluindo nome e extensão).
+        formato (str): O formato desejado ('csv', 'xlsx', 'parquet', 'json'). A extensão
+                       no `caminho_arquivo` deve ser consistente com este formato.
 
     Returns:
         bool: True se o salvamento for bem-sucedido, False caso contrário.
+
+    Raises:
+        ImportError: Se uma dependência necessária para o formato não estiver instalada.
+        ValueError: Se o formato for inválido.
     """
-    logging.info(f"Tentando salvar DataFrame em '{nome_arquivo}'...")
+    logging.info(f"Tentando salvar DataFrame em '{caminho_arquivo}' (formato: {formato})...")
+    formato = formato.lower()
+    extensao = f".{formato}"
+
     try:
-        df.to_csv(nome_arquivo, index=False, encoding='utf-8-sig') # utf-8-sig para melhor compatibilidade Excel
-        logging.info(f"DataFrame salvo com sucesso em '{nome_arquivo}'.")
+        # Garante que o diretório exista
+        diretorio = os.path.dirname(caminho_arquivo)
+        if diretorio: # Se não for vazio (salvando no diretório atual)
+            os.makedirs(diretorio, exist_ok=True)
+
+        # Valida dependências antes de tentar salvar
+        validar_dependencia_leitura(extensao)
+
+        if formato == 'csv':
+            df.to_csv(caminho_arquivo, index=False, encoding='utf-8-sig')
+        elif formato == 'xlsx':
+            df.to_excel(caminho_arquivo, index=False)
+        elif formato == 'parquet':
+            df.to_parquet(caminho_arquivo, index=False)
+        elif formato == 'json':
+            df.to_json(caminho_arquivo, orient='records', indent=4, force_ascii=False)
+        else:
+            # Esta validação já deve ter ocorrido antes, mas por segurança
+            raise ValueError(f"Formato de salvamento não suportado: {formato}")
+
+        caminho_abs = os.path.abspath(caminho_arquivo)
+        logging.info(f"DataFrame salvo com sucesso em '{caminho_abs}'.")
         return True
+
+    except ImportError as e:
+        logging.error(f"Falha ao salvar '{caminho_arquivo}': {e}")
+        raise # Re-levanta ImportError para ser tratado pelo chamador
     except Exception as e:
-        logging.error(f"Falha ao salvar o arquivo CSV '{nome_arquivo}': {e}")
+        logging.error(f"Falha ao salvar o arquivo '{caminho_arquivo}' (formato {formato}): {e}")
         return False
 
 def _gerar_dataframe_amostras(df: pd.DataFrame, nome_coluna_cluster: str, num_clusters: int) -> pd.DataFrame:
     """
-    Gera um DataFrame contendo amostras (até 10 por cluster) do DataFrame original.
+    Gera um DataFrame contendo amostras aleatórias (até 10 por cluster) do DataFrame original.
+    As amostras mantêm todas as colunas originais.
+    (Função auxiliar interna)
 
     Args:
-        df (pd.DataFrame): O DataFrame contendo os dados e a coluna de cluster.
-        nome_coluna_cluster (str): O nome da coluna que identifica o cluster.
-        num_clusters (int): O número de clusters esperado (usado para iterar).
+        df (pd.DataFrame): O DataFrame completo contendo os dados e a(s) coluna(s) de cluster.
+        nome_coluna_cluster (str): O nome da coluna que identifica os clusters da rodada
+                                   da qual se deseja extrair as amostras.
+        num_clusters (int): O número de clusters esperado nessa rodada (usado para iterar).
 
     Returns:
-        pd.DataFrame: DataFrame com as amostras concatenadas, ou DataFrame vazio se não houver amostras.
+        pd.DataFrame: DataFrame com as amostras concatenadas (até 10 por cluster),
+                      ou DataFrame vazio se não houver amostras válidas.
     """
     resultados = pd.DataFrame()
-    actual_clusters = df[nome_coluna_cluster].dropna().unique() # Ignora NA e pega clusters únicos
+    # Garante que estamos lidando com clusters válidos (números inteiros não nulos)
+    actual_clusters = df[nome_coluna_cluster].dropna().astype(int).unique()
 
     for cluster_id in range(num_clusters):
         if cluster_id not in actual_clusters:
@@ -280,7 +282,8 @@ def _gerar_dataframe_amostras(df: pd.DataFrame, nome_coluna_cluster: str, num_cl
         if tamanho_amostra > 0:
             try:
                 amostra_cluster = df_cluster.sample(tamanho_amostra, random_state=42)
-                amostra_cluster.insert(0, 'cluster_original_id', cluster_id) # Adiciona coluna com ID original
+                # A linha abaixo foi removida pois a coluna de cluster já existe no df_cluster
+                # amostra_cluster.insert(0, 'cluster_original_id', cluster_id)
                 resultados = pd.concat([resultados, amostra_cluster], ignore_index=True)
             except Exception as e:
                 logging.error(f"Erro ao amostrar cluster {cluster_id}: {e}")
@@ -290,48 +293,63 @@ def _gerar_dataframe_amostras(df: pd.DataFrame, nome_coluna_cluster: str, num_cl
 
     return resultados
 
-
-def salvar_amostras_excel(df: pd.DataFrame, nome_coluna_cluster: str, num_clusters: int, nome_arquivo: str) -> bool:
+def salvar_amostras(df: pd.DataFrame, nome_coluna_cluster: str, num_clusters: int, caminho_arquivo: str, formato: str) -> bool:
     """
-    Gera e salva amostras (até 10 por cluster) de um DataFrame em um arquivo Excel.
+    Gera e salva amostras (até 10 por cluster) de um DataFrame em um arquivo no formato especificado.
+
+    Suporta os formatos 'xlsx', 'csv', 'json'.
 
     Args:
-        df (pd.DataFrame): O DataFrame contendo os dados e a coluna de cluster.
-        nome_coluna_cluster (str): O nome da coluna que identifica o cluster.
-        num_clusters (int): O número de clusters esperado (usado para gerar amostras).
-        nome_arquivo (str): O caminho do arquivo Excel de saída.
+        df (pd.DataFrame): O DataFrame completo contendo os dados e a coluna de cluster.
+        nome_coluna_cluster (str): O nome da coluna que identifica os clusters da rodada
+                                   da qual se deseja extrair as amostras.
+        num_clusters (int): O número de clusters esperado nessa rodada (usado para gerar amostras).
+        caminho_arquivo (str): O caminho completo do arquivo de saída para as amostras
+                               (incluindo nome e extensão).
+        formato (str): O formato desejado ('xlsx', 'csv', 'json'). A extensão no
+                       `caminho_arquivo` deve ser consistente com este formato.
 
     Returns:
-        bool: True se o salvamento for bem-sucedido (ou se não houver amostras), False em caso de erro.
+        bool: True se o salvamento for bem-sucedido (ou se não houver amostras para salvar),
+              False em caso de erro durante o salvamento.
+
+    Raises:
+        ImportError: Se uma dependência necessária para o formato não estiver instalada.
+        ValueError: Se o formato for inválido.
+        KeyError: Se a coluna de cluster não existir.
     """
-    logging.info(f"Tentando gerar e salvar amostras (até 10 por cluster) em '{nome_arquivo}'...")
+    logging.info(f"Tentando gerar e salvar amostras (até 10 por cluster) em '{caminho_arquivo}' (formato: {formato})...")
+    formato = formato.lower()
+    formatos_validos = ['xlsx', 'csv', 'json']
+    if formato not in formatos_validos:
+        raise ValueError(f"Formato inválido para salvar amostras: '{formato}'. Use um de {formatos_validos}.")
+
     try:
         # Validações essenciais antes de gerar amostras
         validar_coluna_existe(df, nome_coluna_cluster)
-        validar_dependencia(
-            'openpyxl',
-            "A biblioteca 'openpyxl' é necessária para salvar arquivos .xlsx. Instale-a com 'pip install openpyxl'"
-        )
-    except (KeyError, ImportError) as e:
-        # Erros de validação impedem a continuação
-        logging.error(f"Pré-requisito para salvar amostras falhou: {e}")
-        return False
+        # A validação de dependência será feita dentro de salvar_dataframe
 
-    try:
         # Gera o DataFrame de amostras usando a função auxiliar
         df_amostras = _gerar_dataframe_amostras(df, nome_coluna_cluster, num_clusters)
 
         if not df_amostras.empty:
-            # Tenta salvar o DataFrame de amostras em Excel
-            df_amostras.to_excel(nome_arquivo, index=False)
-            logging.info(f"Amostras salvas com sucesso em '{nome_arquivo}'.")
+            # Tenta salvar o DataFrame de amostras usando a função genérica
+            # A função salvar_dataframe cuidará da validação de dependência e do log de sucesso
+            sucesso = salvar_dataframe(df_amostras, caminho_arquivo, formato)
+            if not sucesso:
+                 # Log de erro já foi feito por salvar_dataframe
+                 return False
         else:
-            logging.warning("Nenhuma amostra foi gerada. Arquivo Excel não será criado.")
+            logging.warning(f"Nenhuma amostra foi gerada para '{caminho_arquivo}'. Arquivo não será criado.")
             # Consideramos sucesso, pois não houve erro de IO, apenas não havia o que salvar.
 
+    except (KeyError, ValueError, ImportError) as e:
+        # Captura erros de validação, formato inválido ou dependência (re-levantados por salvar_dataframe)
+        logging.error(f"Pré-requisito ou validação para salvar amostras falhou: {e}")
+        raise # Re-levanta a exceção para ser tratada pelo chamador (ClusterFacil.salvar)
     except Exception as e:
-        # Captura erros durante a geração das amostras ou salvamento do Excel
-        logging.error(f"Falha ao gerar ou salvar o arquivo Excel de amostras '{nome_arquivo}': {e}")
-        return False
+        # Captura outros erros inesperados durante a geração das amostras
+        logging.error(f"Falha inesperada ao gerar ou preparar para salvar amostras em '{caminho_arquivo}': {e}")
+        return False # Retorna False para erros inesperados na geração
 
-    return True
+    return True # Retorna True se salvou com sucesso ou se não havia amostras
