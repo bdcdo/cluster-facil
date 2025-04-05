@@ -85,13 +85,21 @@ class ClusterFacil():
         self._ultima_coluna_cluster: Optional[str] = None
         self._vectorizer: Optional[TfidfVectorizer] = None # Guardar o vectorizer para reuso
 
-    def preparar(self, coluna_textos: str, limite_k: int = 10, n_init = 1) -> None:
+    def preparar(self, coluna_textos: str, limite_k: int = 10, n_init: int = 1, plotar_cotovelo: bool = True) -> None:
         """
         Prepara os dados para clusterização.
 
         Realiza o pré-processamento dos textos (lowercase, preenchimento de nulos),
-        calcula a matriz TF-IDF e gera o gráfico do método do cotovelo (usando `plt.show()`)
-        para ajudar na escolha do número ideal de clusters (K).
+        calcula a matriz TF-IDF e calcula as inércias para o método do cotovelo.
+        Opcionalmente, exibe o gráfico do cotovelo (usando `plt.show()`) para ajudar
+        na escolha do número ideal de clusters (K).
+
+        Nota: A exibição automática do gráfico (`plotar_cotovelo=True`) pressupõe um
+        ambiente interativo (ex: Jupyter Notebook). Em scripts, considere usar `plotar_cotovelo=False`.
+
+        Nota: O cálculo da inércia para o gráfico do cotovelo usa `n_init=1` por padrão
+        para agilidade. Isso pode resultar em um gráfico menos estável que a clusterização
+        final, que usa `n_init='auto'`. Veja o Roadmap para futuras melhorias.
 
         Args:
             coluna_textos (str): O nome da coluna no DataFrame que contém os textos.
@@ -99,6 +107,8 @@ class ClusterFacil():
                                        no método do cotovelo. Default é 10.
             n_init (int, optional): O número de inicializações do K-Means ao calcular
                                     as inércias para o gráfico do cotovelo. Default é 1.
+            plotar_cotovelo (bool, optional): Se True (padrão), exibe o gráfico do método
+                                              do cotovelo. Default é True.
 
         Raises:
             KeyError: Se o nome da coluna `coluna_textos` não existir no DataFrame.
@@ -116,20 +126,32 @@ class ClusterFacil():
         textos_processados = self.df[self.coluna_textos].fillna('').astype(str).str.lower()
 
         logging.info("Calculando TF-IDF inicial...")
+        # TODO (Roadmap): Permitir configuração de parâmetros do TfidfVectorizer.
         self._vectorizer = TfidfVectorizer(stop_words=stop_words_pt)
         self.X = self._vectorizer.fit_transform(textos_processados)
         logging.info(f"Matriz TF-IDF inicial calculada com shape: {self.X.shape}")
 
-        self.inercias = calcular_e_plotar_cotovelo(self.X, limite_k, n_init)
+        # TODO (Roadmap): Avaliar uso de n_init > 1 para o gráfico do cotovelo.
+        self.inercias = calcular_e_plotar_cotovelo(self.X, limite_k, n_init, plotar=plotar_cotovelo)
 
         if self.inercias is not None:
-             logging.info("Preparação concluída. Analise o gráfico do cotovelo para escolher o número de clusters.")
+             if plotar_cotovelo:
+                 logging.info("Preparação concluída. Analise o gráfico do cotovelo exibido para escolher o número de clusters.")
+             else:
+                 logging.info("Preparação concluída. Inércias calculadas, mas gráfico não exibido (plotar_cotovelo=False).")
         else:
              logging.info("Preparação concluída (sem dados para o método do cotovelo).")
 
     def clusterizar(self, num_clusters: int) -> str:
         """
         Executa a clusterização K-Means e adiciona a coluna de clusters ao DataFrame.
+
+        Nota sobre múltiplas rodadas: Se a coluna 'classificacao' existir e contiver
+        linhas já classificadas, esta função irá (por padrão) clusterizar apenas as
+        linhas *não* classificadas. O TF-IDF será recalculado *apenas* para este
+        subset, o que significa que o espaço vetorial (vocabulário, pesos IDF) pode
+        mudar entre as rodadas. Este comportamento é intencional para focar a nova
+        clusterização nos dados remanescentes.
 
         Args:
             num_clusters (int): O número de clusters (K) a ser usado.
@@ -181,6 +203,7 @@ class ClusterFacil():
         validar_parametro_num_clusters(num_clusters, num_amostras_atual)
 
         logging.info(f"Executando K-Means com {num_clusters} clusters em {num_amostras_atual} amostras...")
+        # TODO (Roadmap): Permitir configuração de parâmetros do KMeans.
         kmeans = KMeans(n_clusters=num_clusters, random_state=42, n_init='auto')
         try:
             cluster_labels = kmeans.fit_predict(self.X)
@@ -208,7 +231,12 @@ class ClusterFacil():
 
     def salvar(self, prefixo_saida: str = '', diretorio_saida: Optional[str] = None) -> dict[str, bool]:
         """
-        Salva os resultados da última clusterização realizada (DataFrame completo em CSV e amostras em Excel).
+        Salva os resultados da última clusterização realizada.
+
+        Gera dois arquivos:
+        1. Um arquivo CSV contendo o DataFrame completo com a(s) coluna(s) de cluster.
+        2. Um arquivo Excel contendo até 10 amostras aleatórias de cada cluster gerado
+           na última rodada, facilitando a inspeção rápida dos grupos.
 
         Args:
             prefixo_saida (str, optional): Prefixo para os nomes dos arquivos de saída. Default ''.
@@ -294,25 +322,24 @@ class ClusterFacil():
         # A validação de tipo e não vazio é feita dentro de validar_cluster_ids_presentes
         validar_cluster_ids_presentes(self.df, coluna_cluster_alvo, lista_ids)
 
-        # --- Garante a Existência da Coluna 'classificacao' ---
+        # --- Garante a Existência e Tipo Adequado da Coluna 'classificacao' ---
         if 'classificacao' not in self.df.columns:
-            logging.info("Coluna 'classificacao' não encontrada. Criando coluna...")
-            # Usar pd.NA para nullable string type é mais moderno, mas None funciona bem
-            self.df['classificacao'] = pd.NA
-            # Opcional: Converter para tipo string que aceita nulos
-            try:
-                 self.df['classificacao'] = self.df['classificacao'].astype(pd.StringDtype())
-                 logging.info("Coluna 'classificacao' criada com tipo StringDtype.")
-            except Exception as e:
-                 logging.warning(f"Não foi possível definir StringDtype para 'classificacao': {e}. Usando tipo object.")
-        elif not pd.api.types.is_string_dtype(self.df['classificacao']) and not pd.api.types.is_object_dtype(self.df['classificacao']):
-             # Se existe mas não é string/object, tenta converter (pode falhar se tiver tipos mistos não conversíveis)
-             try:
-                 logging.warning(f"Coluna 'classificacao' existe mas não é string/object ({self.df['classificacao'].dtype}). Tentando converter...")
-                 self.df['classificacao'] = self.df['classificacao'].astype(pd.StringDtype())
-             except Exception as e:
-                 logging.error(f"Falha ao converter coluna 'classificacao' existente para StringDtype: {e}. A classificação pode falhar.")
-                 # Considerar levantar um erro aqui dependendo da criticidade
+            logging.info("Coluna 'classificacao' não encontrada. Criando coluna com tipo StringDtype.")
+            # Criar diretamente com tipo que aceita nulos e strings
+            self.df['classificacao'] = pd.Series(pd.NA, index=self.df.index, dtype=pd.StringDtype())
+        else:
+            # Se existe, garante que seja um tipo adequado (string ou object)
+            # Se for numérico/booleano/etc., a atribuição da string funcionará,
+            # mas pode ser menos eficiente ou gerar warnings dependendo da versão do Pandas.
+            # A conversão explícita é mais segura se quisermos garantir StringDtype.
+            if not pd.api.types.is_string_dtype(self.df['classificacao']) and not pd.api.types.is_object_dtype(self.df['classificacao']):
+                 logging.warning(f"Coluna 'classificacao' existe mas não é string/object ({self.df['classificacao'].dtype}). Convertendo para StringDtype.")
+                 try:
+                     self.df['classificacao'] = self.df['classificacao'].astype(pd.StringDtype())
+                 except Exception as e:
+                     # Se a conversão falhar (tipos muito mistos), loga erro mas continua.
+                     # A atribuição abaixo ainda pode funcionar dependendo do caso.
+                     logging.error(f"Falha ao converter coluna 'classificacao' existente para StringDtype: {e}. A classificação pode não ter o tipo ideal.")
 
         # --- Aplica a Classificação ---
         linhas_a_classificar = self.df[coluna_cluster_alvo].isin(lista_ids)

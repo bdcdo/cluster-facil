@@ -93,14 +93,15 @@ def carregar_dados(caminho_arquivo: str, aba: Optional[str] = None) -> pd.DataFr
         raise ValueError(f"Erro ao processar o arquivo {caminho_arquivo}: {e}")
 
 # --- Funções de Análise e Plotagem ---
-def calcular_e_plotar_cotovelo(X: csr_matrix, limite_k: int, n_init: int = 1) -> Optional[List[float]]:
+def calcular_e_plotar_cotovelo(X: csr_matrix, limite_k: int, n_init: int = 1, plotar: bool = True) -> Optional[List[float]]:
     """
-    Calcula as inércias para diferentes valores de K e plota o gráfico do método do cotovelo.
+    Calcula as inércias para diferentes valores de K e opcionalmente plota o gráfico do método do cotovelo.
 
     Args:
         X (csr_matrix): Matriz TF-IDF dos dados.
         limite_k (int): Número máximo de clusters (K) a testar.
         n_init (int): Número de inicializações do K-Means.
+        plotar (bool, optional): Se True (padrão), exibe o gráfico do cotovelo usando `plt.show()`. Default True.
 
     Returns:
         Optional[List[float]]: Lista de inércias calculadas, ou None se não houver dados.
@@ -122,7 +123,8 @@ def calcular_e_plotar_cotovelo(X: csr_matrix, limite_k: int, n_init: int = 1) ->
         plt.ylabel('Inércia (WCSS)')
         plt.text(0.5, 0.5, 'Não há dados para processar', horizontalalignment='center', verticalalignment='center', transform=plt.gca().transAxes)
         plt.grid(True)
-        plt.show()
+        if plotar:
+            plt.show()
         return None # Retorna None se não há amostras
 
     k_range = range(1, k_max + 1)
@@ -150,7 +152,11 @@ def calcular_e_plotar_cotovelo(X: csr_matrix, limite_k: int, n_init: int = 1) ->
     if k_max > 0:
         plt.xticks(k_range)
     plt.grid(True)
-    plt.show()
+    if plotar:
+        logging.info("Exibindo gráfico do método do cotovelo...")
+        plt.show()
+    else:
+        logging.info("Gráfico do método do cotovelo não será exibido (plotar=False).")
     return inercias
 
 # --- Funções de Preparação de Caminhos ---
