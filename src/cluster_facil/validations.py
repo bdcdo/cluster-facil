@@ -111,19 +111,27 @@ def validar_estado_preparado(instance: 'ClusterFacil') -> None:
          raise RuntimeError(msg)
 
 # --- Validações para 'classificar' ---
-def validar_rodada_valida(rodada_alvo: int, rodada_atual_sistema: int) -> None:
-    """Valida se a rodada alvo é um inteiro válido dentro do histórico de rodadas."""
+def validar_rodada_valida(rodada_alvo: int, rodada_atual_sistema: int, prefixo_cluster: str = "cluster_") -> None:
+    """
+    Valida se a rodada alvo é um inteiro válido dentro do histórico de rodadas.
+    Considera o prefixo para mensagens de erro mais claras, embora a lógica principal
+    dependa apenas dos números das rodadas.
+    """
     if not isinstance(rodada_alvo, int):
         msg = f"O argumento 'rodada' deve ser um inteiro (recebeu: {type(rodada_alvo)})."
         logging.error(msg)
         raise TypeError(msg)
     if not (1 <= rodada_alvo < rodada_atual_sistema):
-        msg = f"Rodada inválida: {rodada_alvo}. Deve ser entre 1 e {rodada_atual_sistema - 1}."
+        # Usa o prefixo na mensagem de erro para clareza
+        msg = f"Rodada inválida: {rodada_alvo} para o prefixo '{prefixo_cluster}'. Deve ser entre 1 e {rodada_atual_sistema - 1}."
         logging.error(msg)
         raise ValueError(msg)
 
-def validar_cluster_ids_presentes(df: pd.DataFrame, coluna_cluster: str, cluster_ids: list[int]) -> None:
-    """Valida se todos os IDs de cluster fornecidos existem na coluna especificada."""
+def validar_cluster_ids_presentes(df: pd.DataFrame, coluna_cluster: str, cluster_ids: list[int], prefixo_cluster: str = "cluster_") -> None:
+    """
+    Valida se todos os IDs de cluster fornecidos existem na coluna especificada.
+    Usa o prefixo para mensagens de erro mais claras.
+    """
     if not all(isinstance(cid, int) for cid in cluster_ids):
         msg = "A lista 'cluster_ids' deve conter apenas inteiros."
         logging.error(msg)
@@ -133,10 +141,14 @@ def validar_cluster_ids_presentes(df: pd.DataFrame, coluna_cluster: str, cluster
         logging.error(msg)
         raise ValueError(msg)
 
-    valores_unicos = df[coluna_cluster].unique()
+    # A coluna_cluster já vem com o prefixo correto do método classificar
+    valores_unicos = df[coluna_cluster].dropna().unique() # Adiciona dropna para segurança
     ids_nao_encontrados = [cid for cid in cluster_ids if cid not in valores_unicos]
     if ids_nao_encontrados:
-        msg = f"Os seguintes IDs de cluster não foram encontrados na coluna '{coluna_cluster}' para a rodada especificada: {ids_nao_encontrados}."
+        # Usa o prefixo na mensagem de erro para clareza
+        rodada_num_match = re.search(r'(\d+)$', coluna_cluster)
+        rodada_str = f" (rodada {rodada_num_match.group(1)})" if rodada_num_match else ""
+        msg = f"Os seguintes IDs de cluster não foram encontrados na coluna '{coluna_cluster}'{rodada_str} para o prefixo '{prefixo_cluster}': {ids_nao_encontrados}."
         logging.error(msg)
         raise ValueError(msg)
 

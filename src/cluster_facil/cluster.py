@@ -1,7 +1,7 @@
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import KMeans
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Self # Adicionado Self para type hint
 from scipy.sparse import csr_matrix
 import logging
 import re
@@ -13,7 +13,9 @@ from .utils import (
     salvar_dataframe,
     salvar_amostras,
     carregar_dados,
-    determinar_caminhos_saida # Importa a nova função
+    determinar_caminhos_saida,
+    ajustar_rodada_inicial, # Adicionado
+    criar_df_subcluster # Adicionado
 )
 from .validations import (
     validar_entrada_inicial,
@@ -51,8 +53,15 @@ class ClusterFacil():
             coluna_textos (Optional[str]): Nome da coluna contendo os textos a serem clusterizados.
             X (Optional[csr_matrix]): Matriz TF-IDF resultante do pré-processamento.
             inercias (Optional[List[float]]): Lista de inercias calculadas para diferentes K no método do cotovelo.
+            prefixo_cluster (str): Prefixo usado para nomear as colunas de cluster (ex: 'cluster_', 'subcluster_').
+            nome_coluna_classificacao (str): Nome da coluna usada para armazenar as classificações manuais.
     """
-    def __init__(self, entrada: Union[pd.DataFrame, str], aba: Optional[str] = None):
+    def __init__(self,
+                 entrada: Union[pd.DataFrame, str],
+                 aba: Optional[str] = None,
+                 prefixo_cluster: str = "cluster_",
+                 nome_coluna_classificacao: str = "classificacao",
+                 random_state: Optional[int] = 42): # Adicionado random_state
         """
         Inicializa a classe ClusterFacil.
 
@@ -65,6 +74,11 @@ class ClusterFacil():
             aba (Optional[str], optional): O nome ou índice da aba a ser lida caso a entrada
                                            seja um caminho para um arquivo Excel (.xlsx).
                                            Se None (padrão), lê a primeira aba. Padrão é None.
+            prefixo_cluster (str, optional): Prefixo para as colunas de cluster. Padrão é "cluster_".
+            nome_coluna_classificacao (str, optional): Nome da coluna de classificação. Padrão é "classificacao".
+            random_state (Optional[int], optional): Semente para geradores de números aleatórios,
+                                                    garantindo reprodutibilidade. Padrão é 42.
+
 
         Raises:
             TypeError: Se a entrada não for um DataFrame ou uma string.
@@ -83,6 +97,8 @@ class ClusterFacil():
             logging.info(f"ClusterFacil inicializado com dados do arquivo: {entrada}" + (f" (aba: {aba})" if aba else ""))
             self._input_path: Optional[str] = entrada # Guarda o caminho de entrada
 
+        self.prefixo_cluster: str = prefixo_cluster
+        self.nome_coluna_classificacao: str = nome_coluna_classificacao
         self.rodada_clusterizacao: int = 1
         self.coluna_textos: Optional[str] = None
         self.X: Optional[csr_matrix] = None # Matriz TF-IDF da última operação relevante
@@ -91,27 +107,10 @@ class ClusterFacil():
         self._ultima_coluna_cluster: Optional[str] = None
         self._vectorizer: Optional[TfidfVectorizer] = None # Guardar o vectorizer para reuso
         self._tfidf_kwargs: Optional[dict] = None # Guardar kwargs do TF-IDF para referência
+        self.random_state = random_state # Armazena o random_state
 
-        # Ajustar rodada_clusterizacao com base nas colunas existentes
-        self._ajustar_rodada_inicial()
-
-    def _ajustar_rodada_inicial(self):
-        """Verifica colunas existentes e ajusta a rodada de clusterização inicial."""
-        max_rodada_existente = 0
-        regex_coluna_cluster = re.compile(r'^cluster_(\d+)$')
-        for col in self.df.columns:
-            match = regex_coluna_cluster.match(col)
-            if match:
-                rodada_num = int(match.group(1))
-                if rodada_num > max_rodada_existente:
-                    max_rodada_existente = rodada_num
-        
-        if max_rodada_existente > 0:
-            self.rodada_clusterizacao = max_rodada_existente + 1
-            logging.info(f"Colunas de cluster existentes detectadas. Próxima rodada será: {self.rodada_clusterizacao}")
-        else:
-            logging.info("Nenhuma coluna de cluster pré-existente encontrada. Iniciando na rodada 1.")
-            self.rodada_clusterizacao = 1 # Garante que seja 1 se nenhuma for encontrada
+        # Ajustar rodada_clusterizacao com base nas colunas existentes usando a função de utils
+        self.rodada_clusterizacao = ajustar_rodada_inicial(self.df.columns, self.prefixo_cluster)
 
     # --- Métodos Privados Auxiliares ---
     def _preparar_dados_rodada_atual(self) -> Optional[pd.Index]:
@@ -132,10 +131,11 @@ class ClusterFacil():
         indices_originais = self.df.index # Guarda todos os índices por padrão -
 
         # Lógica de Filtragem para Rodadas > 1
-        if self.rodada_clusterizacao > 1 and 'classificacao' in self.df.columns:
-            linhas_nao_classificadas = self.df['classificacao'].isna()
+        # Usa o nome da coluna de classificação definido na instância
+        if self.rodada_clusterizacao > 1 and self.nome_coluna_classificacao in self.df.columns:
+            linhas_nao_classificadas = self.df[self.nome_coluna_classificacao].isna()
             if not linhas_nao_classificadas.all(): # Se houver alguma linha classificada
-                logging.info("Identificando linhas não classificadas para a nova rodada.")
+                logging.info(f"Identificando linhas não classificadas na coluna '{self.nome_coluna_classificacao}' para a nova rodada.")
                 df_para_clusterizar = self.df.loc[linhas_nao_classificadas].copy()
                 indices_originais = df_para_clusterizar.index # Guarda índices do subset
                 logging.info(f"Encontradas {len(df_para_clusterizar)} linhas não classificadas.")
@@ -155,7 +155,7 @@ class ClusterFacil():
                 logging.info(f"Nova matriz TF-IDF calculada com shape: {self.X.shape}")
                 return indices_originais # Retorna os índices do subset
             else:
-                logging.info("Coluna 'classificacao' existe, mas todas as linhas estão sem classificação. Usando todos os dados.")
+                logging.info(f"Coluna '{self.nome_coluna_classificacao}' existe, mas todas as linhas estão sem classificação. Usando todos os dados.")
                 # Neste caso, self.X já deve ser o da preparação inicial ou da última rodada completa
                 # Se self.X for None por algum motivo (ex: rodada anterior vazia), precisa recalcular
                 if self.X is None:
@@ -164,7 +164,7 @@ class ClusterFacil():
                     self.X = self._vectorizer.fit_transform(textos_processados)
 
         elif self.rodada_clusterizacao > 1:
-             logging.info("Coluna 'classificacao' não encontrada. Usando todos os dados para clusterização.")
+             logging.info(f"Coluna '{self.nome_coluna_classificacao}' não encontrada. Usando todos os dados para clusterização.")
              # self.X já deve ser o da preparação inicial ou da última rodada completa
              # Se self.X for None por algum motivo, precisa recalcular
              if self.X is None:
@@ -217,29 +217,31 @@ class ClusterFacil():
 
     def _garantir_coluna_classificacao(self) -> None:
         """
-        Garante que a coluna 'classificacao' exista no DataFrame e tenha um tipo adequado (StringDtype).
+        Garante que a coluna de classificação (definida em self.nome_coluna_classificacao)
+        exista no DataFrame e tenha um tipo adequado (StringDtype).
 
         Se a coluna não existir, ela é criada com pd.NA e tipo StringDtype.
         Se existir mas não for string/object, tenta convertê-la para StringDtype.
         """
-        if 'classificacao' not in self.df.columns:
-            logging.info("Coluna 'classificacao' não encontrada. Criando coluna com tipo StringDtype.")
+        col_classif = self.nome_coluna_classificacao # Usa o nome da instância
+        if col_classif not in self.df.columns:
+            logging.info(f"Coluna '{col_classif}' não encontrada. Criando coluna com tipo StringDtype.")
             # Criar diretamente com tipo que aceita nulos e strings
-            self.df['classificacao'] = pd.Series(pd.NA, index=self.df.index, dtype=pd.StringDtype())
+            self.df[col_classif] = pd.Series(pd.NA, index=self.df.index, dtype=pd.StringDtype())
         else:
             # Se existe, garante que seja um tipo adequado (string ou object)
-            if not pd.api.types.is_string_dtype(self.df['classificacao']) and not pd.api.types.is_object_dtype(self.df['classificacao']):
-                 logging.warning(f"Coluna 'classificacao' existe mas não é string/object ({self.df['classificacao'].dtype}). Convertendo para StringDtype.")
+            if not pd.api.types.is_string_dtype(self.df[col_classif]) and not pd.api.types.is_object_dtype(self.df[col_classif]):
+                 logging.warning(f"Coluna '{col_classif}' existe mas não é string/object ({self.df[col_classif].dtype}). Convertendo para StringDtype.")
                  try:
                      # Tenta converter preservando NAs
-                     self.df['classificacao'] = self.df['classificacao'].astype(pd.StringDtype())
-                     logging.info("Coluna 'classificacao' convertida com sucesso para StringDtype.")
+                     self.df[col_classif] = self.df[col_classif].astype(pd.StringDtype())
+                     logging.info(f"Coluna '{col_classif}' convertida com sucesso para StringDtype.")
                  except Exception as e:
                      # Se a conversão falhar (tipos muito mistos), loga erro mas continua.
                      # A atribuição na função classificar ainda pode funcionar dependendo do caso.
-                     logging.error(f"Falha ao converter coluna 'classificacao' existente para StringDtype: {e}. A classificação pode não ter o tipo ideal.")
+                     logging.error(f"Falha ao converter coluna '{col_classif}' existente para StringDtype: {e}. A classificação pode não ter o tipo ideal.")
             else:
-                logging.debug("Coluna 'classificacao' já existe e possui tipo adequado.")
+                logging.debug(f"Coluna '{col_classif}' já existe e possui tipo adequado.")
 
 
     # --- Métodos Públicos ---
@@ -299,7 +301,8 @@ class ClusterFacil():
 
         # TODO (Roadmap): Avaliar uso de n_init > 1 para o gráfico do cotovelo.
         # TODO (Roadmap): Permitir passar kwargs para o KMeans do cotovelo.
-        self.inercias = calcular_e_plotar_cotovelo(self.X, limite_k, n_init, plotar=plotar_cotovelo)
+        # Passa self.random_state para a função do cotovelo
+        self.inercias = calcular_e_plotar_cotovelo(self.X, limite_k, n_init, plotar=plotar_cotovelo, random_state=self.random_state)
 
         if self.inercias is not None:
              if plotar_cotovelo:
@@ -313,9 +316,9 @@ class ClusterFacil():
         """
         Executa a clusterização K-Means e adiciona a coluna de clusters ao DataFrame.
 
-        Nota sobre múltiplas rodadas: Se a coluna 'classificacao' existir e contiver
-        linhas já classificadas, esta função irá (por padrão) clusterizar apenas as
-        linhas *não* classificadas. O TF-IDF será recalculado *apenas* para este
+        Nota sobre múltiplas rodadas: Se a coluna de classificação (self.nome_coluna_classificacao)
+        existir e contiver linhas já classificadas, esta função irá (por padrão) clusterizar
+        apenas as linhas *não* classificadas. O TF-IDF será recalculado *apenas* para este
         subset, o que significa que o espaço vetorial (vocabulário, pesos IDF) pode
         mudar entre as rodadas. Este comportamento é intencional para focar a nova
         clusterização nos dados remanescentes.
@@ -331,14 +334,14 @@ class ClusterFacil():
                              Ex: `clusterizar(..., max_iter=500, tol=1e-5)`
 
         Returns:
-            str: O nome da coluna de cluster criada (ex: 'cluster_1').
+            str: O nome da coluna de cluster criada (ex: 'cluster_1', 'subcluster_1').
 
         Raises:
             RuntimeError: Se `preparar` não foi executado antes ou se não há dados.
             ValueError: Se `num_clusters` for inválido.
             Exception: Outros erros durante a execução do K-Means.
         """
-        logging.info(f"Iniciando clusterização com K={num_clusters} para a rodada {self.rodada_clusterizacao}.")
+        logging.info(f"Iniciando clusterização com K={num_clusters} para a rodada {self.rodada_clusterizacao} (prefixo: '{self.prefixo_cluster}').")
         validar_estado_preparado(self) # Garante que self.X, self.coluna_textos e self._vectorizer existem
 
         # 1. Prepara dados (filtra, recalcula X se necessário) e obtém índices alvo
@@ -358,7 +361,8 @@ class ClusterFacil():
 
         logging.info(f"Executando K-Means com {num_clusters} clusters em {num_amostras_atual} amostras...")
         # Define parâmetros padrão que podem ser sobrescritos pelos kwargs
-        default_kmeans_params = {'n_clusters': num_clusters, 'random_state': 42, 'n_init': 'auto'}
+        # Usa self.random_state como padrão
+        default_kmeans_params = {'n_clusters': num_clusters, 'random_state': self.random_state, 'n_init': 'auto'}
         final_kmeans_kwargs = {**default_kmeans_params, **kmeans_kwargs} # kwargs do usuário têm precedência
         logging.info(f"Parâmetros finais para KMeans: {final_kmeans_kwargs}")
         kmeans = KMeans(**final_kmeans_kwargs)
@@ -370,14 +374,15 @@ class ClusterFacil():
              raise
 
         # 3. Atribui os labels ao DataFrame original usando o método auxiliar
-        nome_coluna_cluster = f'cluster_{self.rodada_clusterizacao}'
+        # Usa o prefixo da instância para nomear a coluna
+        nome_coluna_cluster = f'{self.prefixo_cluster}{self.rodada_clusterizacao}'
         self._atribuir_labels_cluster(cluster_labels, indices_para_clusterizar, nome_coluna_cluster)
 
         # 4. Atualiza estado interno
         self._ultimo_num_clusters = num_clusters
         self._ultima_coluna_cluster = nome_coluna_cluster
         self.rodada_clusterizacao += 1 # Incrementa a rodada APÓS sucesso
-        logging.info(f"Clusterização da rodada {self.rodada_clusterizacao - 1} concluída com sucesso.")
+        logging.info(f"Clusterização da rodada {self.rodada_clusterizacao - 1} (prefixo '{self.prefixo_cluster}') concluída com sucesso.")
         return nome_coluna_cluster
 
     def salvar(self,
@@ -432,7 +437,7 @@ class ClusterFacil():
                          (ex: `openpyxl` para `.xlsx`, `pyarrow` para `.parquet`) não estiver instalada.
             OSError: Se houver um erro ao tentar criar o `diretorio_saida` (ex: permissão negada).
         """
-        logging.info(f"Iniciando processo de salvamento (o_que_salvar='{o_que_salvar}')...")
+        logging.info(f"Iniciando processo de salvamento (o_que_salvar='{o_que_salvar}', prefixo='{self.prefixo_cluster}')...")
         resultados_salvamento = {
             'tudo_salvo': False, 'caminho_tudo': None,
             'amostras_salvas': False, 'caminho_amostras': None
@@ -442,13 +447,14 @@ class ClusterFacil():
             # --- Validações Iniciais ---
             validar_estado_clusterizado(self)
             rodada_a_salvar = self.rodada_clusterizacao - 1
-            nome_coluna_cluster = self._ultima_coluna_cluster
+            nome_coluna_cluster = self._ultima_coluna_cluster # Já contém o prefixo correto
             num_clusters = self._ultimo_num_clusters
             validar_coluna_cluster_existe(self.df, nome_coluna_cluster)
             validar_opcao_salvar(o_que_salvar)
 
             # --- Determinar Caminhos e Formatos Finais (usando a função de utils) ---
             # A validação de formato (validar_formato_salvar) agora ocorre dentro de determinar_caminhos_saida
+            # Passa o prefixo para gerar nomes padrão corretos
             caminhos_formatos = determinar_caminhos_saida(
                 o_que_salvar=o_que_salvar,
                 formato_tudo=formato_tudo,
@@ -457,7 +463,8 @@ class ClusterFacil():
                 caminho_amostras=caminho_amostras,
                 diretorio_saida=diretorio_saida,
                 input_path=self._input_path,
-                rodada_a_salvar=rodada_a_salvar
+                rodada_a_salvar=rodada_a_salvar,
+                prefixo_cluster=self.prefixo_cluster # Passa o prefixo atual
             )
 
             path_tudo_final = caminhos_formatos['path_tudo_final']
@@ -497,9 +504,9 @@ class ClusterFacil():
         """
         Atribui uma classificação a um ou mais clusters de uma rodada específica.
 
-        Preenche a coluna 'classificacao' do DataFrame para todas as linhas
-        pertencentes aos clusters especificados na rodada indicada. Se a coluna
-        'classificacao' não existir, ela será criada. Classificações posteriores
+        Preenche a coluna de classificação (self.nome_coluna_classificacao) do DataFrame
+        para todas as linhas pertencentes aos clusters especificados na rodada indicada.
+        Se a coluna de classificação não existir, ela será criada. Classificações posteriores
         para as mesmas linhas sobrescreverão as anteriores.
 
         Args:
@@ -529,24 +536,28 @@ class ClusterFacil():
 
         # --- Determina e Valida a Rodada Alvo ---
         rodada_alvo = rodada if rodada is not None else self.rodada_clusterizacao - 1
-        validar_rodada_valida(rodada_alvo, self.rodada_clusterizacao)
+        # Passa o prefixo para a validação encontrar a coluna correta
+        validar_rodada_valida(rodada_alvo, self.rodada_clusterizacao, self.prefixo_cluster)
 
         # --- Valida Coluna e IDs de Cluster ---
-        coluna_cluster_alvo = f'cluster_{rodada_alvo}'
+        # Usa o prefixo para construir o nome da coluna alvo
+        coluna_cluster_alvo = f'{self.prefixo_cluster}{rodada_alvo}'
         validar_coluna_existe(self.df, coluna_cluster_alvo) # Garante que a coluna da rodada existe
 
         lista_ids = cluster_ids if isinstance(cluster_ids, list) else [cluster_ids]
         # A validação de tipo e não vazio é feita dentro de validar_cluster_ids_presentes
-        validar_cluster_ids_presentes(self.df, coluna_cluster_alvo, lista_ids)
+        # Passa o prefixo para a validação
+        validar_cluster_ids_presentes(self.df, coluna_cluster_alvo, lista_ids, self.prefixo_cluster)
 
-        # --- Garante a Existência e Tipo Adequado da Coluna 'classificacao' ---
-        self._garantir_coluna_classificacao()
+        # --- Garante a Existência e Tipo Adequado da Coluna de Classificação ---
+        self._garantir_coluna_classificacao() # Já usa self.nome_coluna_classificacao
 
         # --- Aplica a Classificação ---
         linhas_a_classificar = self.df[coluna_cluster_alvo].isin(lista_ids)
         num_linhas = linhas_a_classificar.sum()
-        logging.info(f"Aplicando classificação '{classificacao}' a {num_linhas} linha(s) correspondente(s) aos clusters {lista_ids} da rodada {rodada_alvo}.")
-        self.df.loc[linhas_a_classificar, 'classificacao'] = classificacao
+        logging.info(f"Aplicando classificação '{classificacao}' a {num_linhas} linha(s) na coluna '{self.nome_coluna_classificacao}' correspondente(s) aos clusters {lista_ids} da coluna '{coluna_cluster_alvo}'.")
+        # Usa o nome da coluna de classificação da instância
+        self.df.loc[linhas_a_classificar, self.nome_coluna_classificacao] = classificacao
 
         logging.info("Classificação concluída.")
 
@@ -597,25 +608,27 @@ class ClusterFacil():
         """
         Reseta o estado da instância ClusterFacil.
 
-        Remove todas as colunas de cluster ('cluster_1', 'cluster_2', etc.) e
-        a coluna 'classificacao' (se existir) do DataFrame. Redefine o contador
-        de rodadas para 1 e limpa os resultados e configurações de clusterizações
-        anteriores (matriz TF-IDF, inércias, vectorizer, coluna de textos).
+        Remove todas as colunas de cluster (usando self.prefixo_cluster) e
+        a coluna de classificação (self.nome_coluna_classificacao), se existirem.
+        Redefine o contador de rodadas para 1 e limpa os resultados e configurações
+        de clusterizações anteriores (matriz TF-IDF, inércias, vectorizer, coluna de textos).
 
         Após chamar `resetar`, será necessário chamar `preparar` novamente antes
         de poder `clusterizar` ou `finalizar`.
         """
-        logging.warning("Iniciando reset do estado do ClusterFacil...")
+        logging.warning(f"Iniciando reset do estado do ClusterFacil (prefixo: '{self.prefixo_cluster}', classificacao: '{self.nome_coluna_classificacao}')...")
 
         colunas_para_remover = []
-        regex_coluna_cluster = re.compile(r'^cluster_\d+$')
+        # Usa o prefixo da instância para encontrar as colunas de cluster
+        regex_coluna_cluster = re.compile(rf'^{re.escape(self.prefixo_cluster)}\d+$')
 
         for col in self.df.columns:
             if regex_coluna_cluster.match(col):
                 colunas_para_remover.append(col)
 
-        if 'classificacao' in self.df.columns:
-             colunas_para_remover.append('classificacao') # Também remove a coluna de classificação
+        # Usa o nome da coluna de classificação da instância
+        if self.nome_coluna_classificacao in self.df.columns:
+             colunas_para_remover.append(self.nome_coluna_classificacao)
 
         if colunas_para_remover:
             self.df.drop(columns=colunas_para_remover, inplace=True, errors='ignore')
@@ -631,5 +644,115 @@ class ClusterFacil():
         self._ultimo_num_clusters = None
         self._ultima_coluna_cluster = None
         self._vectorizer = None
+        self._tfidf_kwargs = None # Resetar também os kwargs do TF-IDF
 
         logging.info("Estado do ClusterFacil resetado. Rodada definida para 1. Chame 'preparar' novamente.")
+
+    # --- Novos Métodos ---
+
+    def subcluster(self, classificacao_desejada: str) -> Self:
+        """
+        Cria uma nova instância de ClusterFacil contendo apenas os dados de uma classificação específica.
+
+        A nova instância terá as colunas de cluster resetadas e usará 'subcluster_' como prefixo
+        e 'subclassificacao' como nome da coluna de classificação. A coluna de classificação
+        original é mantida e renomeada para '{nome_original}_origem'.
+
+        Args:
+            classificacao_desejada (str): A classificação a ser usada para filtrar os dados.
+
+        Returns:
+            ClusterFacil: Uma nova instância de ClusterFacil configurada para o subcluster.
+
+        Raises:
+            KeyError: Se a coluna de classificação (self.nome_coluna_classificacao) não existir (via `criar_df_subcluster`).
+            ValueError: Se a `classificacao_desejada` não for encontrada na coluna de classificação (via `criar_df_subcluster`).
+            RuntimeError: Se `preparar` não foi chamado na instância original (necessário para self.coluna_textos).
+        """
+        logging.info(f"Criando subcluster para a classificação: '{classificacao_desejada}'")
+
+        # Validação: Coluna de classificação existe?
+        validar_coluna_existe(self.df, self.nome_coluna_classificacao)
+
+        # Validação: Classificação desejada existe?
+        if classificacao_desejada not in self.df[self.nome_coluna_classificacao].unique():
+            msg = f"A classificação '{classificacao_desejada}' não foi encontrada na coluna '{self.nome_coluna_classificacao}'."
+            logging.error(msg)
+            raise ValueError(msg)
+
+        # Validação: Coluna de texto foi definida?
+        if not self.coluna_textos:
+             msg = "O método 'preparar' deve ser executado na instância original para definir 'coluna_textos' antes de criar um subcluster."
+             logging.error(msg)
+             raise RuntimeError(msg)
+
+        # Cria o DataFrame do subcluster usando a função utilitária
+        # A função já faz a filtragem, limpeza de colunas e renomeação
+        df_sub = criar_df_subcluster(self.df, self.nome_coluna_classificacao, classificacao_desejada)
+
+        # Criar e retornar nova instância
+        subcluster_instance = ClusterFacil(
+            entrada=df_sub, # Usa o DataFrame já processado
+            prefixo_cluster="subcluster_",
+            nome_coluna_classificacao="subclassificacao"
+        )
+        # Propagar a coluna de texto e os kwargs do TF-IDF para a nova instância
+        # Isso permite chamar preparar/clusterizar diretamente no subcluster sem re-especificar
+        subcluster_instance.coluna_textos = self.coluna_textos
+        subcluster_instance._tfidf_kwargs = self._tfidf_kwargs.copy() if self._tfidf_kwargs else None
+        logging.info("Nova instância ClusterFacil para o subcluster criada.")
+
+        return subcluster_instance
+
+    def obter_subcluster_df(self, classificacao_desejada: str) -> pd.DataFrame:
+        """
+        Retorna um DataFrame contendo apenas os dados de uma classificação específica,
+        com as colunas de cluster removidas e a coluna de classificação original renomeada.
+
+        Args:
+            classificacao_desejada (str): A classificação a ser usada para filtrar os dados.
+
+        Returns:
+            pd.DataFrame: O DataFrame filtrado e limpo.
+
+        Raises:
+            KeyError: Se a coluna de classificação (self.nome_coluna_classificacao) não existir (via `criar_df_subcluster`).
+            ValueError: Se a `classificacao_desejada` não for encontrada na coluna de classificação (via `criar_df_subcluster`).
+        """
+        logging.info(f"Obtendo DataFrame do subcluster para a classificação: '{classificacao_desejada}'")
+        # Validações de coluna e classificação, filtragem e limpeza são feitas dentro de criar_df_subcluster
+        return criar_df_subcluster(self.df, self.nome_coluna_classificacao, classificacao_desejada)
+
+    def listar_classificacoes(self) -> List[str]:
+        """
+        Retorna uma lista das classificações únicas (não nulas) presentes na coluna de classificação.
+
+        Returns:
+            List[str]: Lista de strings das classificações únicas. Retorna lista vazia se
+                       a coluna não existir ou não houver classificações.
+        """
+        if self.nome_coluna_classificacao not in self.df.columns:
+            logging.warning(f"Coluna de classificação '{self.nome_coluna_classificacao}' não encontrada. Retornando lista vazia.")
+            return []
+        
+        classificacoes_unicas = self.df[self.nome_coluna_classificacao].dropna().unique().tolist()
+        # Garante que sejam strings (embora _garantir_coluna_classificacao tente fazer isso)
+        classificacoes_unicas = [str(c) for c in classificacoes_unicas]
+        logging.info(f"Classificações únicas encontradas: {classificacoes_unicas}")
+        return classificacoes_unicas
+
+    def contar_classificacoes(self) -> pd.Series:
+        """
+        Retorna a contagem de cada classificação presente na coluna de classificação.
+
+        Returns:
+            pd.Series: Uma Series do Pandas com as classificações como índice e suas contagens
+                       como valores. Retorna uma Series vazia se a coluna não existir.
+        """
+        if self.nome_coluna_classificacao not in self.df.columns:
+            logging.warning(f"Coluna de classificação '{self.nome_coluna_classificacao}' não encontrada. Retornando Series vazia.")
+            return pd.Series(dtype=int) # Retorna Series vazia com tipo int
+
+        contagem = self.df[self.nome_coluna_classificacao].value_counts(dropna=True) # dropna=True é o padrão, mas explícito
+        logging.info(f"Contagem de classificações na coluna '{self.nome_coluna_classificacao}':\n{contagem}")
+        return contagem

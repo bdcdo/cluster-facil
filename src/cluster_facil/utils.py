@@ -4,8 +4,9 @@
 # --- Importações ---
 import logging
 import os
+import re # Adicionado re
 from typing import List, Optional, Union # Adicionado Union
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt # Removido do topo
 import nltk
 import pandas as pd
 from nltk.corpus import stopwords
@@ -25,6 +26,40 @@ from .validations import (
 
 # --- Configuração de Logging ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+
+# --- Funções de Ajuste e Preparação ---
+
+def ajustar_rodada_inicial(colunas: pd.Index, prefixo_cluster: str) -> int:
+    """
+    Verifica colunas existentes com o prefixo fornecido e determina a próxima rodada.
+
+    Args:
+        colunas (pd.Index): As colunas do DataFrame a serem verificadas.
+        prefixo_cluster (str): O prefixo usado para nomear as colunas de cluster (ex: 'cluster_', 'subcluster_').
+
+    Returns:
+        int: O número da próxima rodada de clusterização (começando em 1).
+    """
+    max_rodada_existente = 0
+    # Usa o prefixo para criar o regex dinamicamente
+    regex_coluna_cluster = re.compile(rf'^{re.escape(prefixo_cluster)}(\d+)$')
+    logging.debug(f"Procurando colunas com padrão: {regex_coluna_cluster.pattern}")
+    for col in colunas:
+        match = regex_coluna_cluster.match(str(col)) # Garante que col seja string
+        if match:
+            rodada_num = int(match.group(1))
+            logging.debug(f"Coluna encontrada: {col}, rodada: {rodada_num}")
+            if rodada_num > max_rodada_existente:
+                max_rodada_existente = rodada_num
+
+    proxima_rodada = max_rodada_existente + 1
+    if max_rodada_existente > 0:
+        logging.info(f"Colunas com prefixo '{prefixo_cluster}' detectadas. Próxima rodada será: {proxima_rodada}")
+    else:
+        logging.info(f"Nenhuma coluna com prefixo '{prefixo_cluster}' encontrada. Iniciando na rodada 1.")
+        proxima_rodada = 1 # Garante que seja 1 se nenhuma for encontrada
+    return proxima_rodada
 
 # --- Carregamento de Stopwords (Executado na importação do módulo) ---
 stop_words_pt: List[str] = []
@@ -97,7 +132,7 @@ def carregar_dados(caminho_arquivo: str, aba: Optional[str] = None) -> pd.DataFr
 
 # --- Funções de Análise e Plotagem ---
 
-def calcular_inercias_kmeans(X: csr_matrix, limite_k: int, n_init: int = 1) -> Optional[List[float]]:
+def calcular_inercias_kmeans(X: csr_matrix, limite_k: int, n_init: int = 1, random_state: Optional[int] = 42) -> Optional[List[float]]: # Adicionado random_state
     """
     Calcula as inércias do K-Means para diferentes valores de K.
 
@@ -105,6 +140,7 @@ def calcular_inercias_kmeans(X: csr_matrix, limite_k: int, n_init: int = 1) -> O
         X (csr_matrix): Matriz TF-IDF dos dados.
         limite_k (int): Número máximo de clusters (K) a testar.
         n_init (int): Número de inicializações do K-Means. Padrão é 1.
+        random_state (Optional[int], optional): Semente para o gerador de números aleatórios. Padrão é 42.
 
     Returns:
         Optional[List[float]]: Lista de inércias calculadas, ou None se não houver amostras.
@@ -128,7 +164,8 @@ def calcular_inercias_kmeans(X: csr_matrix, limite_k: int, n_init: int = 1) -> O
             logging.warning(f"n_init ({n_init}) > amostras ({X.shape[0]}) para K=1. Usando n_init=1.")
             current_n_init = 1
 
-        kmeans = KMeans(n_clusters=k, random_state=42, n_init=current_n_init)
+        # Usa o random_state recebido
+        kmeans = KMeans(n_clusters=k, random_state=random_state, n_init=current_n_init)
         kmeans.fit(X)
         inercias.append(kmeans.inertia_)
         logging.debug(f"Inércia para K={k}: {kmeans.inertia_}")
@@ -137,6 +174,13 @@ def calcular_inercias_kmeans(X: csr_matrix, limite_k: int, n_init: int = 1) -> O
 
 def _plotar_cotovelo_sem_dados():
     """Plota um gráfico indicando que não há dados para o método do cotovelo."""
+    try:
+        validar_dependencia('matplotlib', "A biblioteca 'matplotlib' é necessária para plotar gráficos. Instale-a com 'pip install matplotlib'")
+        import matplotlib.pyplot as plt
+    except ImportError as e:
+        logging.error(f"Não foi possível plotar: {e}")
+        return # Não plota se a dependência estiver faltando
+
     plt.figure(figsize=(10, 6))
     plt.title('Método do Cotovelo - Nenhuma amostra encontrada')
     plt.xlabel('Número de Clusters (K)')
@@ -153,6 +197,13 @@ def plotar_grafico_cotovelo(k_range: range, inercias: List[float]):
         k_range (range): O range de valores de K utilizados.
         inercias (List[float]): A lista de inércias correspondente a cada K.
     """
+    try:
+        validar_dependencia('matplotlib', "A biblioteca 'matplotlib' é necessária para plotar gráficos. Instale-a com 'pip install matplotlib'")
+        import matplotlib.pyplot as plt
+    except ImportError as e:
+        logging.error(f"Não foi possível plotar: {e}")
+        return # Não plota se a dependência estiver faltando
+
     logging.info("Gerando gráfico do método do cotovelo...")
     plt.figure(figsize=(10, 6))
     plt.plot(k_range, inercias, marker='o')
@@ -165,7 +216,7 @@ def plotar_grafico_cotovelo(k_range: range, inercias: List[float]):
     logging.info("Exibindo gráfico do método do cotovelo...")
     plt.show()
 
-def calcular_e_plotar_cotovelo(X: csr_matrix, limite_k: int, n_init: int = 1, plotar: bool = True) -> Optional[List[float]]:
+def calcular_e_plotar_cotovelo(X: csr_matrix, limite_k: int, n_init: int = 1, plotar: bool = True, random_state: Optional[int] = 42) -> Optional[List[float]]: # Adicionado random_state
     """
     Calcula as inércias para diferentes valores de K e opcionalmente plota o gráfico do método do cotovelo.
 
@@ -176,11 +227,13 @@ def calcular_e_plotar_cotovelo(X: csr_matrix, limite_k: int, n_init: int = 1, pl
         limite_k (int): Número máximo de clusters (K) a testar.
         n_init (int, optional): Número de inicializações do K-Means para cálculo da inércia. Padrão é 1.
         plotar (bool, optional): Se True (padrão), exibe o gráfico do cotovelo. Padrão é True.
+        random_state (Optional[int], optional): Semente para o gerador de números aleatórios. Padrão é 42.
 
     Returns:
         Optional[List[float]]: Lista de inércias calculadas, ou None se não houver dados.
     """
-    inercias = calcular_inercias_kmeans(X, limite_k, n_init)
+    # Passa o random_state para a função de cálculo
+    inercias = calcular_inercias_kmeans(X, limite_k, n_init, random_state=random_state)
 
     if inercias is None:
         if plotar:
@@ -206,7 +259,8 @@ def determinar_caminhos_saida(
     caminho_amostras: Optional[str],
     diretorio_saida: Optional[str],
     input_path: Optional[str], # Para nome base padrão
-    rodada_a_salvar: int
+    rodada_a_salvar: int,
+    prefixo_cluster: str = "cluster_" # Adicionado prefixo
 ) -> dict[str, Optional[str]]:
     """
     Determina os caminhos e formatos finais para salvar os resultados.
@@ -223,6 +277,8 @@ def determinar_caminhos_saida(
         diretorio_saida (Optional[str]): Diretório padrão para salvar.
         input_path (Optional[str]): Caminho do arquivo de entrada original (para nome base).
         rodada_a_salvar (int): Número da rodada sendo salva.
+        prefixo_cluster (str, optional): Prefixo usado para as colunas de cluster
+                                         (ex: 'cluster_', 'subcluster_'). Padrão é 'cluster_'.
 
     Returns:
         dict[str, Optional[str]]: Dicionário contendo:
@@ -266,9 +322,11 @@ def determinar_caminhos_saida(
                 path_tudo_final = f"{caminho_tudo}.{fmt_tudo_final}"
                 logging.info(f"Adicionando extensão .{fmt_tudo_final} ao caminho explícito.")
         else:
-            # Usa nome padrão
+            # Usa nome padrão, incorporando o prefixo
             validar_formato_salvar(fmt_tudo_final, 'tudo') # Valida o formato padrão
-            nome_arquivo = f"{nome_base_padrao}_clusters_{rodada_a_salvar}.{fmt_tudo_final}"
+            # Usa o prefixo no nome do arquivo, removendo o trailing '_' se existir
+            prefixo_nome = prefixo_cluster.rstrip('_')
+            nome_arquivo = f"{nome_base_padrao}_{prefixo_nome}_{rodada_a_salvar}.{fmt_tudo_final}"
             path_tudo_final = os.path.join(diretorio_saida or '.', nome_arquivo)
             logging.info(f"Usando caminho padrão para DataFrame completo: {path_tudo_final}")
 
@@ -288,9 +346,11 @@ def determinar_caminhos_saida(
                 path_amostras_final = f"{caminho_amostras}.{fmt_amostras_final}"
                 logging.info(f"Adicionando extensão .{fmt_amostras_final} ao caminho explícito.")
          else:
-            # Usa nome padrão
+            # Usa nome padrão, incorporando o prefixo
             validar_formato_salvar(fmt_amostras_final, 'amostras') # Valida o formato padrão
-            nome_arquivo = f"{nome_base_padrao}_amostras_{rodada_a_salvar}.{fmt_amostras_final}"
+            # Usa o prefixo no nome do arquivo, removendo o trailing '_' se existir
+            prefixo_nome = prefixo_cluster.rstrip('_')
+            nome_arquivo = f"{nome_base_padrao}_{prefixo_nome}_amostras_{rodada_a_salvar}.{fmt_amostras_final}"
             path_amostras_final = os.path.join(diretorio_saida or '.', nome_arquivo)
             logging.info(f"Usando caminho padrão para amostras: {path_amostras_final}")
 
@@ -458,3 +518,57 @@ def salvar_amostras(df: pd.DataFrame, nome_coluna_cluster: str, num_clusters: in
         return False # Retorna False para erros inesperados na geração
 
     return True # Retorna True se salvou com sucesso ou se não havia amostras
+
+
+# --- Funções de Subcluster ---
+
+def criar_df_subcluster(df: pd.DataFrame, nome_coluna_classificacao: str, classificacao_desejada: str) -> pd.DataFrame:
+    """
+    Filtra um DataFrame por uma classificação, remove colunas de cluster/subcluster
+    e renomeia a coluna de classificação original.
+
+    Args:
+        df (pd.DataFrame): O DataFrame original.
+        nome_coluna_classificacao (str): Nome da coluna usada para classificar.
+        classificacao_desejada (str): A classificação específica para filtrar.
+
+    Returns:
+        pd.DataFrame: Um novo DataFrame contendo apenas os dados filtrados e limpos.
+
+    Raises:
+        KeyError: Se a coluna de classificação não existir no DataFrame.
+        ValueError: Se a classificação desejada não for encontrada.
+    """
+    logging.info(f"Criando DataFrame de subcluster para a classificação: '{classificacao_desejada}'")
+
+    # Validação: Coluna de classificação existe? (Reutiliza validação)
+    validar_coluna_existe(df, nome_coluna_classificacao)
+
+    # Validação: Classificação desejada existe?
+    if classificacao_desejada not in df[nome_coluna_classificacao].unique():
+        msg = f"A classificação '{classificacao_desejada}' não foi encontrada na coluna '{nome_coluna_classificacao}'."
+        logging.error(msg)
+        raise ValueError(msg)
+
+    # Filtragem
+    df_sub = df[df[nome_coluna_classificacao] == classificacao_desejada].copy()
+    logging.info(f"Subcluster DataFrame criado com {len(df_sub)} linhas.")
+
+    # Limpeza de colunas de cluster/subcluster existentes
+    colunas_cluster_para_remover = []
+    # Procura por colunas que comecem com 'cluster_' ou 'subcluster_' seguido por números
+    regex_qualquer_cluster = re.compile(r'^(cluster_|subcluster_)\d+$')
+    for col in df_sub.columns:
+        if regex_qualquer_cluster.match(str(col)): # Garante que col seja string
+            colunas_cluster_para_remover.append(col)
+
+    if colunas_cluster_para_remover:
+        df_sub.drop(columns=colunas_cluster_para_remover, inplace=True, errors='ignore')
+        logging.info(f"Colunas de cluster/subcluster removidas do subcluster: {colunas_cluster_para_remover}")
+
+    # Renomear coluna de classificação original
+    coluna_origem = f"{nome_coluna_classificacao}_origem"
+    df_sub.rename(columns={nome_coluna_classificacao: coluna_origem}, inplace=True)
+    logging.info(f"Coluna de classificação original renomeada para '{coluna_origem}'.")
+
+    return df_sub
