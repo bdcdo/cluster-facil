@@ -85,6 +85,136 @@ class ClusterFacil():
         self._ultima_coluna_cluster: Optional[str] = None
         self._vectorizer: Optional[TfidfVectorizer] = None # Guardar o vectorizer para reuso
 
+    # --- Métodos Privados Auxiliares ---
+    def _preparar_dados_rodada_atual(self) -> Optional[pd.Index]:
+        """
+        Prepara os dados para a rodada de clusterização atual.
+
+        Identifica as linhas a serem clusterizadas (todas ou apenas as não classificadas
+        em rodadas > 1), recalcula o TF-IDF se necessário (apenas para o subset não
+        classificado) e atualiza self.X.
+
+        Returns:
+            Optional[pd.Index]: Os índices do DataFrame original correspondentes às
+                                linhas que foram selecionadas para esta rodada de
+                                clusterização. Retorna None se nenhuma linha for selecionada.
+                                Retorna self.df.index se todas as linhas forem usadas.
+        """
+        df_para_clusterizar = self.df
+        indices_originais = self.df.index # Guarda todos os índices por padrão
+
+        # Lógica de Filtragem para Rodadas > 1
+        if self.rodada_clusterizacao > 1 and 'classificacao' in self.df.columns:
+            linhas_nao_classificadas = self.df['classificacao'].isna()
+            if not linhas_nao_classificadas.all(): # Se houver alguma linha classificada
+                logging.info("Identificando linhas não classificadas para a nova rodada.")
+                df_para_clusterizar = self.df.loc[linhas_nao_classificadas].copy()
+                indices_originais = df_para_clusterizar.index # Guarda índices do subset
+                logging.info(f"Encontradas {len(df_para_clusterizar)} linhas não classificadas.")
+
+                if df_para_clusterizar.empty:
+                    logging.warning("Nenhuma linha não classificada encontrada. Clusterização desta rodada será pulada.")
+                    self.X = None # Garante que X esteja vazio se não houver dados
+                    return None # Indica que não há o que clusterizar
+
+                # Recalcular TF-IDF apenas no subset
+                logging.info("Recalculando TF-IDF para as linhas não classificadas...")
+                # Garante que coluna_textos não seja None (validado em preparar)
+                textos_subset = df_para_clusterizar[self.coluna_textos].fillna('').astype(str).str.lower()
+                # Reutiliza o vectorizer configurado, mas ajusta ao novo vocabulário
+                # Garante que _vectorizer não seja None (validado em preparar)
+                self.X = self._vectorizer.fit_transform(textos_subset)
+                logging.info(f"Nova matriz TF-IDF calculada com shape: {self.X.shape}")
+                return indices_originais # Retorna os índices do subset
+            else:
+                logging.info("Coluna 'classificacao' existe, mas todas as linhas estão sem classificação. Usando todos os dados.")
+                # Neste caso, self.X já deve ser o da preparação inicial ou da última rodada completa
+                # Se self.X for None por algum motivo (ex: rodada anterior vazia), precisa recalcular
+                if self.X is None:
+                    logging.warning("self.X era None, recalculando TF-IDF para todos os dados.")
+                    textos_processados = self.df[self.coluna_textos].fillna('').astype(str).str.lower()
+                    self.X = self._vectorizer.fit_transform(textos_processados)
+
+        elif self.rodada_clusterizacao > 1:
+             logging.info("Coluna 'classificacao' não encontrada. Usando todos os dados para clusterização.")
+             # self.X já deve ser o da preparação inicial ou da última rodada completa
+             # Se self.X for None por algum motivo, precisa recalcular
+             if self.X is None:
+                 logging.warning("self.X era None, recalculando TF-IDF para todos os dados.")
+                 textos_processados = self.df[self.coluna_textos].fillna('').astype(str).str.lower()
+                 self.X = self._vectorizer.fit_transform(textos_processados)
+
+        # Se chegou aqui, significa que todas as linhas são usadas ou é a primeira rodada
+        # Garante que self.X não seja None (deve ter sido calculado em preparar ou recalculado acima)
+        if self.X is None:
+             # Isso não deveria acontecer se preparar() foi chamado, mas como segurança:
+             logging.error("Estado inesperado: self.X é None mesmo após a lógica de preparação da rodada.")
+             raise RuntimeError("Erro interno: Matriz TF-IDF (self.X) não está disponível.")
+
+        return indices_originais # Retorna todos os índices
+
+    def _atribuir_labels_cluster(self, cluster_labels: List[int], indices_alvo: pd.Index, nome_coluna_cluster: str) -> None:
+        """
+        Atribui os rótulos de cluster ao DataFrame principal.
+
+        Cria ou atualiza a coluna de cluster especificada, atribuindo os labels
+        apenas às linhas correspondentes aos índices fornecidos. Garante que a
+        coluna tenha o tipo Int64Dtype (inteiro nullable).
+
+        Args:
+            cluster_labels (List[int]): Lista de rótulos de cluster retornados pelo K-Means.
+            indices_alvo (pd.Index): Índices do DataFrame original onde os labels devem ser atribuídos.
+            nome_coluna_cluster (str): Nome da coluna de cluster a ser criada/atualizada.
+        """
+        logging.debug(f"Atribuindo {len(cluster_labels)} labels à coluna '{nome_coluna_cluster}' nos índices alvo.")
+        # Inicializa a coluna com NA para garantir que linhas não clusterizadas (se houver) fiquem NA
+        # ou para limpar valores de uma rodada anterior se a coluna já existir (embora não devesse pelo nome)
+        if nome_coluna_cluster not in self.df.columns:
+            self.df[nome_coluna_cluster] = pd.NA
+        else:
+            # Se a coluna já existe (improvável, mas seguro), preenche com NA antes de atribuir
+            self.df[nome_coluna_cluster] = pd.NA
+
+        # Atribui os labels apenas às linhas que foram clusterizadas, usando os índices originais
+        self.df.loc[indices_alvo, nome_coluna_cluster] = cluster_labels
+        # Converte para inteiro nullable para consistência
+        try:
+            self.df[nome_coluna_cluster] = self.df[nome_coluna_cluster].astype(pd.Int64Dtype())
+            logging.debug(f"Coluna '{nome_coluna_cluster}' convertida para Int64Dtype.")
+        except Exception as e:
+            logging.error(f"Falha ao converter a coluna '{nome_coluna_cluster}' para Int64Dtype: {e}. A coluna pode não ter o tipo ideal.")
+
+        logging.info(f"Coluna '{nome_coluna_cluster}' adicionada/atualizada no DataFrame.")
+
+
+    def _garantir_coluna_classificacao(self) -> None:
+        """
+        Garante que a coluna 'classificacao' exista no DataFrame e tenha um tipo adequado (StringDtype).
+
+        Se a coluna não existir, ela é criada com pd.NA e tipo StringDtype.
+        Se existir mas não for string/object, tenta convertê-la para StringDtype.
+        """
+        if 'classificacao' not in self.df.columns:
+            logging.info("Coluna 'classificacao' não encontrada. Criando coluna com tipo StringDtype.")
+            # Criar diretamente com tipo que aceita nulos e strings
+            self.df['classificacao'] = pd.Series(pd.NA, index=self.df.index, dtype=pd.StringDtype())
+        else:
+            # Se existe, garante que seja um tipo adequado (string ou object)
+            if not pd.api.types.is_string_dtype(self.df['classificacao']) and not pd.api.types.is_object_dtype(self.df['classificacao']):
+                 logging.warning(f"Coluna 'classificacao' existe mas não é string/object ({self.df['classificacao'].dtype}). Convertendo para StringDtype.")
+                 try:
+                     # Tenta converter preservando NAs
+                     self.df['classificacao'] = self.df['classificacao'].astype(pd.StringDtype())
+                     logging.info("Coluna 'classificacao' convertida com sucesso para StringDtype.")
+                 except Exception as e:
+                     # Se a conversão falhar (tipos muito mistos), loga erro mas continua.
+                     # A atribuição na função classificar ainda pode funcionar dependendo do caso.
+                     logging.error(f"Falha ao converter coluna 'classificacao' existente para StringDtype: {e}. A classificação pode não ter o tipo ideal.")
+            else:
+                logging.debug("Coluna 'classificacao' já existe e possui tipo adequado.")
+
+
+    # --- Métodos Públicos ---
     def preparar(self, coluna_textos: str, limite_k: int = 10, n_init: int = 1, plotar_cotovelo: bool = True) -> None:
         """
         Prepara os dados para clusterização.
@@ -97,7 +227,7 @@ class ClusterFacil():
         Nota: A exibição automática do gráfico (`plotar_cotovelo=True`) pressupõe um
         ambiente interativo (ex: Jupyter Notebook). Em scripts, considere usar `plotar_cotovelo=False`.
 
-        Nota: O cálculo da inércia para o gráfico do cotovelo usa `n_init=1` por padrão
+        Nota 2: O cálculo da inércia para o gráfico do cotovelo usa `n_init=1` por padrão
         para agilidade. Isso pode resultar em um gráfico menos estável que a clusterização
         final, que usa `n_init='auto'`. Veja o Roadmap para futuras melhorias.
 
@@ -165,40 +295,20 @@ class ClusterFacil():
             Exception: Outros erros durante a execução do K-Means.
         """
         logging.info(f"Iniciando clusterização com K={num_clusters} para a rodada {self.rodada_clusterizacao}.")
-        validar_estado_preparado(self) # Garante que self.X e self.coluna_textos existem
+        validar_estado_preparado(self) # Garante que self.X, self.coluna_textos e self._vectorizer existem
 
-        df_para_clusterizar = self.df
-        indices_originais = self.df.index # Guarda todos os índices por padrão
+        # 1. Prepara dados (filtra, recalcula X se necessário) e obtém índices alvo
+        indices_para_clusterizar = self._preparar_dados_rodada_atual()
 
-        # --- Lógica de Filtragem para Rodadas > 1 ---
-        if self.rodada_clusterizacao > 1 and 'classificacao' in self.df.columns:
-            linhas_nao_classificadas = self.df['classificacao'].isna()
-            if not linhas_nao_classificadas.all(): # Se houver alguma linha classificada
-                logging.info("Identificando linhas não classificadas para a nova rodada.")
-                df_para_clusterizar = self.df.loc[linhas_nao_classificadas].copy()
-                indices_originais = df_para_clusterizar.index # Guarda índices do subset
-                logging.info(f"Encontradas {len(df_para_clusterizar)} linhas não classificadas.")
+        # Se _preparar_dados_rodada_atual retornou None ou self.X ficou None/vazio, pula a rodada
+        if indices_para_clusterizar is None or self.X is None or self.X.shape[0] == 0:
+            logging.warning(f"Nenhuma amostra válida para clusterizar na rodada {self.rodada_clusterizacao}. Pulando.")
+            # Não incrementa rodada, retorna o último sucesso
+            if self._ultima_coluna_cluster is None:
+                 raise RuntimeError("Nenhuma clusterização anterior bem-sucedida e a atual não pôde ser executada.")
+            return self._ultima_coluna_cluster
 
-                if df_para_clusterizar.empty:
-                    logging.warning("Nenhuma linha não classificada encontrada. Clusterização desta rodada será pulada.")
-                    # Não incrementa rodada, não faz nada
-                    # Retorna o nome da coluna da *última* clusterização bem-sucedida
-                    return self._ultima_coluna_cluster
-
-                # Recalcular TF-IDF apenas no subset
-                logging.info("Recalculando TF-IDF para as linhas não classificadas...")
-                textos_subset = df_para_clusterizar[self.coluna_textos].fillna('').astype(str).str.lower()
-                # Reutiliza o vectorizer configurado, mas ajusta ao novo vocabulário
-                self.X = self._vectorizer.fit_transform(textos_subset)
-                logging.info(f"Nova matriz TF-IDF calculada com shape: {self.X.shape}")
-            else:
-                logging.info("Coluna 'classificacao' existe, mas todas as linhas estão sem classificação. Usando todos os dados.")
-                # Neste caso, self.X já deve ser o da preparação inicial ou da última rodada completa
-        elif self.rodada_clusterizacao > 1:
-             logging.info("Coluna 'classificacao' não encontrada. Usando todos os dados para clusterização.")
-             # self.X já deve ser o da preparação inicial ou da última rodada completa
-
-        # --- Validação e Execução do K-Means ---
+        # 2. Valida K e executa K-Means
         num_amostras_atual = self.X.shape[0]
         validar_parametro_num_clusters(num_clusters, num_amostras_atual)
 
@@ -207,26 +317,20 @@ class ClusterFacil():
         kmeans = KMeans(n_clusters=num_clusters, random_state=42, n_init='auto')
         try:
             cluster_labels = kmeans.fit_predict(self.X)
+            logging.info(f"K-Means concluído. {len(cluster_labels)} labels gerados.")
         except Exception as e:
              logging.error(f"Erro durante a execução do K-Means: {e}")
              raise
 
-        # --- Atribuição dos Clusters ao DataFrame Original ---
+        # 3. Atribui os labels ao DataFrame original usando o método auxiliar
         nome_coluna_cluster = f'cluster_{self.rodada_clusterizacao}'
-        # Inicializa a coluna com NA para garantir que linhas não clusterizadas (se houver) fiquem NA
-        self.df[nome_coluna_cluster] = pd.NA
-        # Atribui os labels apenas às linhas que foram clusterizadas, usando os índices originais
-        self.df.loc[indices_originais, nome_coluna_cluster] = cluster_labels
-        # Converte para inteiro nullable para consistência
-        self.df[nome_coluna_cluster] = self.df[nome_coluna_cluster].astype(pd.Int64Dtype())
+        self._atribuir_labels_cluster(cluster_labels, indices_para_clusterizar, nome_coluna_cluster)
 
-        logging.info(f"Coluna '{nome_coluna_cluster}' adicionada/atualizada no DataFrame.")
-
+        # 4. Atualiza estado interno
         self._ultimo_num_clusters = num_clusters
         self._ultima_coluna_cluster = nome_coluna_cluster
-
         self.rodada_clusterizacao += 1 # Incrementa a rodada APÓS sucesso
-        logging.info(f"Clusterização da rodada {self.rodada_clusterizacao - 1} concluída.")
+        logging.info(f"Clusterização da rodada {self.rodada_clusterizacao - 1} concluída com sucesso.")
         return nome_coluna_cluster
 
     def salvar(self, prefixo_saida: str = '', diretorio_saida: Optional[str] = None) -> dict[str, bool]:
@@ -323,23 +427,7 @@ class ClusterFacil():
         validar_cluster_ids_presentes(self.df, coluna_cluster_alvo, lista_ids)
 
         # --- Garante a Existência e Tipo Adequado da Coluna 'classificacao' ---
-        if 'classificacao' not in self.df.columns:
-            logging.info("Coluna 'classificacao' não encontrada. Criando coluna com tipo StringDtype.")
-            # Criar diretamente com tipo que aceita nulos e strings
-            self.df['classificacao'] = pd.Series(pd.NA, index=self.df.index, dtype=pd.StringDtype())
-        else:
-            # Se existe, garante que seja um tipo adequado (string ou object)
-            # Se for numérico/booleano/etc., a atribuição da string funcionará,
-            # mas pode ser menos eficiente ou gerar warnings dependendo da versão do Pandas.
-            # A conversão explícita é mais segura se quisermos garantir StringDtype.
-            if not pd.api.types.is_string_dtype(self.df['classificacao']) and not pd.api.types.is_object_dtype(self.df['classificacao']):
-                 logging.warning(f"Coluna 'classificacao' existe mas não é string/object ({self.df['classificacao'].dtype}). Convertendo para StringDtype.")
-                 try:
-                     self.df['classificacao'] = self.df['classificacao'].astype(pd.StringDtype())
-                 except Exception as e:
-                     # Se a conversão falhar (tipos muito mistos), loga erro mas continua.
-                     # A atribuição abaixo ainda pode funcionar dependendo do caso.
-                     logging.error(f"Falha ao converter coluna 'classificacao' existente para StringDtype: {e}. A classificação pode não ter o tipo ideal.")
+        self._garantir_coluna_classificacao()
 
         # --- Aplica a Classificação ---
         linhas_a_classificar = self.df[coluna_cluster_alvo].isin(lista_ids)

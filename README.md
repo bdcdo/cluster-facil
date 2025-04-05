@@ -85,6 +85,8 @@ Para os curiosos, o Cluster Fácil segue estes passos principais:
 Temos planos para continuar melhorando o Cluster Fácil! Aqui estão algumas ideias e funcionalidades que gostaríamos de adicionar no futuro:
 
 *   **Gerenciamento de Rodadas:** Identificar rodadas de clusterização anteriores no DataFrame e permitir ao usuário sobreescrevê-las se desejar.
+*   **Subtemas e subclusterização:** Implementar possibilidade de atribuir subtemas e de realizar clusterizações específicas em colunas com um determinado tema.
+*   **Revisar configurações de salvamento:** Repensar estrutura da função salvar.
 *   **Configuração do TF-IDF:** Permitir a configuração de parâmetros avançados do `TfidfVectorizer` (ex: `min_df`, `max_df`, `ngram_range`) durante a preparação.
 *   **Configuração do K-Means:** Permitir a configuração de parâmetros avançados do `KMeans` (ex: `max_iter`, `tol`) durante a clusterização.
 *   **Configuração do Método do Cotovelo:** Avaliar o uso de `n_init` maior que 1 no cálculo do método do cotovelo para maior estabilidade do gráfico (atualmente `n_init=1` por padrão em `preparar` para agilidade).

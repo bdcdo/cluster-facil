@@ -93,70 +93,104 @@ def carregar_dados(caminho_arquivo: str, aba: Optional[str] = None) -> pd.DataFr
         raise ValueError(f"Erro ao processar o arquivo {caminho_arquivo}: {e}")
 
 # --- Funções de Análise e Plotagem ---
-def calcular_e_plotar_cotovelo(X: csr_matrix, limite_k: int, n_init: int = 1, plotar: bool = True) -> Optional[List[float]]:
+
+def calcular_inercias_kmeans(X: csr_matrix, limite_k: int, n_init: int = 1) -> Optional[List[float]]:
     """
-    Calcula as inércias para diferentes valores de K e opcionalmente plota o gráfico do método do cotovelo.
+    Calcula as inércias do K-Means para diferentes valores de K.
 
     Args:
         X (csr_matrix): Matriz TF-IDF dos dados.
         limite_k (int): Número máximo de clusters (K) a testar.
         n_init (int): Número de inicializações do K-Means.
-        plotar (bool, optional): Se True (padrão), exibe o gráfico do cotovelo usando `plt.show()`. Default True.
 
     Returns:
-        Optional[List[float]]: Lista de inércias calculadas, ou None se não houver dados.
+        Optional[List[float]]: Lista de inércias calculadas, ou None se não houver amostras.
     """
     logging.info("Calculando inércias para o método do cotovelo...")
-    # Valida n_init antes de começar usando a função genérica
     validar_inteiro_positivo('n_init', n_init)
 
-    inercias = []
-    # Garante que limite_k não seja maior que o número de amostras
     k_max = min(limite_k, X.shape[0])
     if k_max < limite_k:
         logging.warning(f"Limite K ({limite_k}) é maior que o número de amostras ({X.shape[0]}). Usando K máximo = {k_max}.")
     if k_max == 0:
-        logging.error("Não há amostras para calcular o método do cotovelo.")
-        plt.figure(figsize=(10, 6))
-        plt.title('Método do Cotovelo - Nenhuma amostra encontrada')
-        plt.xlabel('Número de Clusters (K)')
-        plt.ylabel('Inércia (WCSS)')
-        plt.text(0.5, 0.5, 'Não há dados para processar', horizontalalignment='center', verticalalignment='center', transform=plt.gca().transAxes)
-        plt.grid(True)
-        if plotar:
-            plt.show()
-        return None # Retorna None se não há amostras
+        logging.error("Não há amostras para calcular inércias.")
+        return None
 
+    inercias = []
     k_range = range(1, k_max + 1)
     for k in k_range:
-        # Adiciona tratamento para n_init
-        # Ajusta n_init apenas se for maior que as amostras para K=1 (caso especial do KMeans)
-        # A validação de n_init > 0 já foi feita
         current_n_init = n_init
+        # Ajusta n_init apenas se for maior que as amostras para K=1 (caso especial do KMeans)
         if k == 1 and n_init > X.shape[0]:
             logging.warning(f"n_init ({n_init}) > amostras ({X.shape[0]}) para K=1. Usando n_init=1.")
             current_n_init = 1
-        # Não precisa mais do elif n_init <= 0
 
         kmeans = KMeans(n_clusters=k, random_state=42, n_init=current_n_init)
         kmeans.fit(X)
         inercias.append(kmeans.inertia_)
         logging.debug(f"Inércia para K={k}: {kmeans.inertia_}")
 
+    return inercias
+
+def _plotar_cotovelo_sem_dados():
+    """Plota um gráfico indicando que não há dados para o método do cotovelo."""
+    plt.figure(figsize=(10, 6))
+    plt.title('Método do Cotovelo - Nenhuma amostra encontrada')
+    plt.xlabel('Número de Clusters (K)')
+    plt.ylabel('Inércia (WCSS)')
+    plt.text(0.5, 0.5, 'Não há dados para processar', horizontalalignment='center', verticalalignment='center', transform=plt.gca().transAxes)
+    plt.grid(True)
+    plt.show()
+
+def plotar_grafico_cotovelo(k_range: range, inercias: List[float]):
+    """
+    Plota o gráfico do método do cotovelo.
+
+    Args:
+        k_range (range): O range de valores de K utilizados.
+        inercias (List[float]): A lista de inércias correspondente a cada K.
+    """
     logging.info("Gerando gráfico do método do cotovelo...")
     plt.figure(figsize=(10, 6))
     plt.plot(k_range, inercias, marker='o')
     plt.title('Método do Cotovelo para Escolha de K')
     plt.xlabel('Número de Clusters (K)')
     plt.ylabel('Inércia (WCSS)')
-    if k_max > 0:
+    if len(k_range) > 0: # Evita erro se k_range for vazio
         plt.xticks(k_range)
     plt.grid(True)
+    logging.info("Exibindo gráfico do método do cotovelo...")
+    plt.show()
+
+def calcular_e_plotar_cotovelo(X: csr_matrix, limite_k: int, n_init: int = 1, plotar: bool = True) -> Optional[List[float]]:
+    """
+    Calcula as inércias para diferentes valores de K e opcionalmente plota o gráfico do método do cotovelo.
+
+    Orquestra o cálculo das inércias e a plotagem do gráfico.
+
+    Args:
+        X (csr_matrix): Matriz TF-IDF dos dados.
+        limite_k (int): Número máximo de clusters (K) a testar.
+        n_init (int): Número de inicializações do K-Means para cálculo da inércia.
+        plotar (bool, optional): Se True (padrão), exibe o gráfico do cotovelo. Default True.
+
+    Returns:
+        Optional[List[float]]: Lista de inércias calculadas, ou None se não houver dados.
+    """
+    inercias = calcular_inercias_kmeans(X, limite_k, n_init)
+
+    if inercias is None:
+        if plotar:
+            _plotar_cotovelo_sem_dados()
+        return None
+
     if plotar:
-        logging.info("Exibindo gráfico do método do cotovelo...")
-        plt.show()
+        k_max = min(limite_k, X.shape[0]) # Recalcula k_max para o range correto
+        k_range = range(1, k_max + 1)
+        plotar_grafico_cotovelo(k_range, inercias)
     else:
         logging.info("Gráfico do método do cotovelo não será exibido (plotar=False).")
+
     return inercias
 
 # --- Funções de Preparação de Caminhos ---
@@ -221,6 +255,42 @@ def salvar_dataframe_csv(df: pd.DataFrame, nome_arquivo: str) -> bool:
         logging.error(f"Falha ao salvar o arquivo CSV '{nome_arquivo}': {e}")
         return False
 
+def _gerar_dataframe_amostras(df: pd.DataFrame, nome_coluna_cluster: str, num_clusters: int) -> pd.DataFrame:
+    """
+    Gera um DataFrame contendo amostras (até 10 por cluster) do DataFrame original.
+
+    Args:
+        df (pd.DataFrame): O DataFrame contendo os dados e a coluna de cluster.
+        nome_coluna_cluster (str): O nome da coluna que identifica o cluster.
+        num_clusters (int): O número de clusters esperado (usado para iterar).
+
+    Returns:
+        pd.DataFrame: DataFrame com as amostras concatenadas, ou DataFrame vazio se não houver amostras.
+    """
+    resultados = pd.DataFrame()
+    actual_clusters = df[nome_coluna_cluster].dropna().unique() # Ignora NA e pega clusters únicos
+
+    for cluster_id in range(num_clusters):
+        if cluster_id not in actual_clusters:
+            logging.warning(f"Cluster ID {cluster_id} não foi encontrado nos dados ou não foi gerado. Nenhuma amostra será retirada.")
+            continue
+
+        df_cluster = df[df[nome_coluna_cluster] == cluster_id]
+        tamanho_amostra = min(10, len(df_cluster))
+        if tamanho_amostra > 0:
+            try:
+                amostra_cluster = df_cluster.sample(tamanho_amostra, random_state=42)
+                amostra_cluster.insert(0, 'cluster_original_id', cluster_id) # Adiciona coluna com ID original
+                resultados = pd.concat([resultados, amostra_cluster], ignore_index=True)
+            except Exception as e:
+                logging.error(f"Erro ao amostrar cluster {cluster_id}: {e}")
+                # Continua para os próximos clusters
+        else:
+            logging.warning(f"Cluster {cluster_id} está vazio ou contém apenas NA, nenhuma amostra será retirada.")
+
+    return resultados
+
+
 def salvar_amostras_excel(df: pd.DataFrame, nome_coluna_cluster: str, num_clusters: int, nome_arquivo: str) -> bool:
     """
     Gera e salva amostras (até 10 por cluster) de um DataFrame em um arquivo Excel.
@@ -228,7 +298,7 @@ def salvar_amostras_excel(df: pd.DataFrame, nome_coluna_cluster: str, num_cluste
     Args:
         df (pd.DataFrame): O DataFrame contendo os dados e a coluna de cluster.
         nome_coluna_cluster (str): O nome da coluna que identifica o cluster.
-        num_clusters (int): O número de clusters esperado (usado para iterar).
+        num_clusters (int): O número de clusters esperado (usado para gerar amostras).
         nome_arquivo (str): O caminho do arquivo Excel de saída.
 
     Returns:
@@ -236,39 +306,32 @@ def salvar_amostras_excel(df: pd.DataFrame, nome_coluna_cluster: str, num_cluste
     """
     logging.info(f"Tentando gerar e salvar amostras (até 10 por cluster) em '{nome_arquivo}'...")
     try:
+        # Validações essenciais antes de gerar amostras
         validar_coluna_existe(df, nome_coluna_cluster)
         validar_dependencia(
             'openpyxl',
             "A biblioteca 'openpyxl' é necessária para salvar arquivos .xlsx. Instale-a com 'pip install openpyxl'"
         )
     except (KeyError, ImportError) as e:
+        # Erros de validação impedem a continuação
+        logging.error(f"Pré-requisito para salvar amostras falhou: {e}")
         return False
 
-    resultados = pd.DataFrame()
     try:
-        actual_clusters = df[nome_coluna_cluster].unique()
-        for cluster_id in range(num_clusters):
-            if cluster_id not in actual_clusters:
-                logging.warning(f"Cluster ID {cluster_id} não foi gerado. Nenhuma amostra será retirada.")
-                continue
+        # Gera o DataFrame de amostras usando a função auxiliar
+        df_amostras = _gerar_dataframe_amostras(df, nome_coluna_cluster, num_clusters)
 
-            df_cluster = df[df[nome_coluna_cluster] == cluster_id]
-            tamanho_amostra = min(10, len(df_cluster))
-            if tamanho_amostra > 0:
-                amostra_cluster = df_cluster.sample(tamanho_amostra, random_state=42)
-                amostra_cluster.insert(0, 'cluster_original_id', cluster_id)
-                resultados = pd.concat([resultados, amostra_cluster], ignore_index=True)
-            else:
-                logging.warning(f"Cluster {cluster_id} está vazio, nenhuma amostra será retirada.")
-
-        if not resultados.empty:
-            resultados.to_excel(nome_arquivo, index=False)
+        if not df_amostras.empty:
+            # Tenta salvar o DataFrame de amostras em Excel
+            df_amostras.to_excel(nome_arquivo, index=False)
             logging.info(f"Amostras salvas com sucesso em '{nome_arquivo}'.")
         else:
             logging.warning("Nenhuma amostra foi gerada. Arquivo Excel não será criado.")
             # Consideramos sucesso, pois não houve erro de IO, apenas não havia o que salvar.
 
     except Exception as e:
+        # Captura erros durante a geração das amostras ou salvamento do Excel
         logging.error(f"Falha ao gerar ou salvar o arquivo Excel de amostras '{nome_arquivo}': {e}")
         return False
+
     return True
