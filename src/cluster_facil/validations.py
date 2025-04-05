@@ -4,8 +4,7 @@
 import importlib
 import logging
 import os
-from typing import Any, Optional, TYPE_CHECKING
-
+from typing import Any, Optional, TYPE_CHECKING, Union
 import pandas as pd
 from scipy.sparse import csr_matrix
 
@@ -110,6 +109,47 @@ def validar_estado_preparado(instance: 'ClusterFacil') -> None:
          msg = "Não há dados para processar (matriz X vazia). Execute 'preparar' com um DataFrame que contenha dados."
          logging.error(msg)
          raise RuntimeError(msg)
+
+# --- Validações para 'classificar' ---
+def validar_rodada_valida(rodada_alvo: int, rodada_atual_sistema: int) -> None:
+    """Valida se a rodada alvo é um inteiro válido dentro do histórico de rodadas."""
+    if not isinstance(rodada_alvo, int):
+        msg = f"O argumento 'rodada' deve ser um inteiro (recebeu: {type(rodada_alvo)})."
+        logging.error(msg)
+        raise TypeError(msg)
+    if not (1 <= rodada_alvo < rodada_atual_sistema):
+        msg = f"Rodada inválida: {rodada_alvo}. Deve ser entre 1 e {rodada_atual_sistema - 1}."
+        logging.error(msg)
+        raise ValueError(msg)
+
+def validar_cluster_ids_presentes(df: pd.DataFrame, coluna_cluster: str, cluster_ids: list[int]) -> None:
+    """Valida se todos os IDs de cluster fornecidos existem na coluna especificada."""
+    if not all(isinstance(cid, int) for cid in cluster_ids):
+        msg = "A lista 'cluster_ids' deve conter apenas inteiros."
+        logging.error(msg)
+        raise TypeError(msg)
+    if not cluster_ids:
+        msg = "A lista 'cluster_ids' não pode estar vazia."
+        logging.error(msg)
+        raise ValueError(msg)
+
+    valores_unicos = df[coluna_cluster].unique()
+    ids_nao_encontrados = [cid for cid in cluster_ids if cid not in valores_unicos]
+    if ids_nao_encontrados:
+        msg = f"Os seguintes IDs de cluster não foram encontrados na coluna '{coluna_cluster}' para a rodada especificada: {ids_nao_encontrados}."
+        logging.error(msg)
+        raise ValueError(msg)
+
+def validar_tipo_classificacao(classificacao: Any) -> None:
+    """Valida se a classificação é uma string não vazia."""
+    if not isinstance(classificacao, str):
+        msg = f"A 'classificacao' deve ser uma string (recebeu: {type(classificacao)})."
+        logging.error(msg)
+        raise TypeError(msg)
+    if not classificacao: # Verifica se a string não está vazia
+        msg = "A 'classificacao' não pode ser uma string vazia."
+        logging.error(msg)
+        raise ValueError(msg)
 
 def validar_estado_clusterizado(instance: 'ClusterFacil') -> None:
     """Verifica se o método 'clusterizar' foi executado pelo menos uma vez."""
