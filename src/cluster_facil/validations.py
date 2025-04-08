@@ -75,7 +75,11 @@ def validar_coluna_existe(df: pd.DataFrame, coluna: str) -> None:
 def validar_tipo_coluna_texto(df: pd.DataFrame, coluna: str) -> None:
     """Tenta converter a coluna para string para validar se contém dados processáveis como texto."""
     try:
-        # Apenas tenta a conversão, não modifica o df original aqui
+        # Tenta a conversão para string, preenchendo NaNs com string vazia antes.
+        # Porquê? Isso verifica de forma mais robusta se a coluna pode ser tratada
+        # como texto, mesmo que o dtype original não seja 'string' (ex: 'object')
+        # ou se contiver valores nulos (NaN), que causariam erro na conversão direta.
+        # Não modifica o DataFrame original, apenas testa a possibilidade da conversão.
         df[coluna].fillna('').astype(str)
     except Exception as e:
         logging.error(f"Erro ao processar a coluna '{coluna}'. Verifique se ela contém texto.")
@@ -156,9 +160,13 @@ def validar_cluster_ids_presentes(df: pd.DataFrame, coluna_cluster: str, cluster
     valores_unicos = df[coluna_cluster].dropna().unique() # Adiciona dropna para segurança
     ids_nao_encontrados = [cid for cid in cluster_ids if cid not in valores_unicos]
     if ids_nao_encontrados:
-        # Usa o prefixo na mensagem de erro para clareza
+        # Tenta extrair o número da rodada do nome da coluna usando regex.
+        # Porquê? Para incluir o número da rodada na mensagem de erro, tornando-a
+        # mais informativa para o usuário, especialmente quando se trabalha com
+        # múltiplas rodadas de clusterização (ex: 'cluster_1', 'subcluster_2').
         rodada_num_match = re.search(r'(\d+)$', coluna_cluster)
         rodada_str = f" (rodada {rodada_num_match.group(1)})" if rodada_num_match else ""
+        # Usa o prefixo e a rodada (se encontrada) na mensagem de erro para clareza.
         msg = f"Os seguintes IDs de cluster não foram encontrados na coluna '{coluna_cluster}'{rodada_str} para o prefixo '{prefixo_cluster}': {ids_nao_encontrados}."
         logging.error(msg)
         raise ValueError(msg)

@@ -369,55 +369,71 @@ def determinar_caminhos_saida(
 
     # Determinar caminho/formato para o arquivo completo
     if o_que_salvar in ['tudo', 'ambos']:
+        # --- Lógica para o arquivo completo ---
         if caminho_tudo:
+            # Caso 1: Usuário forneceu um caminho explícito para o arquivo completo.
             logging.debug(f"Caminho explícito fornecido para o arquivo completo: {caminho_tudo}")
-            # Extrai formato da extensão, se houver, e valida
+            # Verifica se o caminho explícito já inclui uma extensão.
             _, ext = os.path.splitext(caminho_tudo)
             fmt_detectado = ext[1:].lower() if ext else None
             if fmt_detectado:
-                validar_formato_salvar(fmt_detectado, 'tudo') # Valida o formato detectado
+                # Se há extensão, usa-a como formato final (após validação).
+                validar_formato_salvar(fmt_detectado, 'tudo') # Valida o formato detectado da extensão
                 fmt_tudo_final = fmt_detectado
-                path_tudo_final = caminho_tudo
+                path_tudo_final = caminho_tudo # Usa o caminho como está
                 logging.debug(f"Formato '{fmt_tudo_final}' detectado da extensão do caminho explícito.")
             else:
-                # Se não há extensão, usa formato_tudo padrão e adiciona extensão
+                # Se não há extensão no caminho explícito, usa o formato padrão (`formato_tudo`)
+                # e adiciona essa extensão ao caminho fornecido.
                 validar_formato_salvar(fmt_tudo_final, 'tudo') # Valida o formato padrão
                 path_tudo_final = f"{caminho_tudo}.{fmt_tudo_final}"
                 logging.debug(f"Nenhuma extensão no caminho explícito. Usando formato padrão '{fmt_tudo_final}' e adicionando extensão: {path_tudo_final}")
         else:
-            # Usa nome padrão
-            validar_formato_salvar(fmt_tudo_final, 'tudo') # Valida o formato padrão
-            # Usa o prefixo no nome do arquivo, removendo o trailing '_' se existir
-            prefixo_nome = prefixo_cluster.rstrip('_')
-            nome_arquivo = f"{nome_base_padrao}_{prefixo_nome}_rodada{rodada_a_salvar}.{fmt_tudo_final}" # Nome mais claro
+            # Caso 2: Usuário NÃO forneceu caminho explícito. Usaremos um nome padrão.
+            validar_formato_salvar(fmt_tudo_final, 'tudo') # Valida o formato padrão escolhido
+            # Constrói o nome do arquivo padrão:
+            # - Usa o nome base (derivado do input ou 'resultados_cluster').
+            # - Adiciona o prefixo do cluster (ex: 'cluster', 'subcluster').
+            # - Adiciona o número da rodada.
+            # - Adiciona a extensão do formato padrão.
+            prefixo_nome = prefixo_cluster.rstrip('_') # Remove '_' final se houver
+            nome_arquivo = f"{nome_base_padrao}_{prefixo_nome}_rodada{rodada_a_salvar}.{fmt_tudo_final}"
+            # Junta o nome do arquivo com o diretório de saída (ou o diretório atual se None).
             path_tudo_final = os.path.join(diretorio_saida or '.', nome_arquivo)
             logging.info(f"Usando caminho padrão para o arquivo completo: {path_tudo_final}")
 
     # Determinar caminho/formato para o arquivo de amostras
     if o_que_salvar in ['amostras', 'ambos']:
+         # --- Lógica para o arquivo de amostras (análoga à do arquivo completo) ---
          if caminho_amostras:
+            # Caso 1: Usuário forneceu um caminho explícito para as amostras.
             logging.debug(f"Caminho explícito fornecido para o arquivo de amostras: {caminho_amostras}")
             _, ext = os.path.splitext(caminho_amostras)
             fmt_detectado = ext[1:].lower() if ext else None
             if fmt_detectado:
-                validar_formato_salvar(fmt_detectado, 'amostras') # Valida o formato detectado
+                # Se há extensão, usa-a como formato final (após validação).
+                validar_formato_salvar(fmt_detectado, 'amostras') # Valida o formato detectado da extensão
                 fmt_amostras_final = fmt_detectado
-                path_amostras_final = caminho_amostras
+                path_amostras_final = caminho_amostras # Usa o caminho como está
                 logging.debug(f"Formato '{fmt_amostras_final}' detectado da extensão do caminho explícito das amostras.")
             else:
-                # Se não há extensão, usa formato_amostras padrão e adiciona extensão
+                # Se não há extensão no caminho explícito, usa o formato padrão (`formato_amostras`)
+                # e adiciona essa extensão ao caminho fornecido.
                 validar_formato_salvar(fmt_amostras_final, 'amostras') # Valida o formato padrão
                 path_amostras_final = f"{caminho_amostras}.{fmt_amostras_final}"
                 logging.debug(f"Nenhuma extensão no caminho explícito das amostras. Usando formato padrão '{fmt_amostras_final}' e adicionando extensão: {path_amostras_final}")
          else:
-            # Usa nome padrão
-            validar_formato_salvar(fmt_amostras_final, 'amostras') # Valida o formato padrão
-            # Usa o prefixo no nome do arquivo, removendo o trailing '_' se existir
+            # Caso 2: Usuário NÃO forneceu caminho explícito para amostras. Usaremos um nome padrão.
+            validar_formato_salvar(fmt_amostras_final, 'amostras') # Valida o formato padrão escolhido
+            # Constrói o nome do arquivo padrão (similar ao arquivo completo, mas com '_amostras').
             prefixo_nome = prefixo_cluster.rstrip('_')
-            nome_arquivo = f"{nome_base_padrao}_{prefixo_nome}_amostras_rodada{rodada_a_salvar}.{fmt_amostras_final}" # Nome mais claro
+            nome_arquivo = f"{nome_base_padrao}_{prefixo_nome}_amostras_rodada{rodada_a_salvar}.{fmt_amostras_final}"
+            # Junta com o diretório de saída.
             path_amostras_final = os.path.join(diretorio_saida or '.', nome_arquivo)
             logging.info(f"Usando caminho padrão para o arquivo de amostras: {path_amostras_final}")
 
+    # Retorna os caminhos e formatos finais determinados (ou None se não aplicável)
+    # Os caminhos são convertidos para absolutos para clareza.
     return {
         'path_tudo_final': os.path.abspath(path_tudo_final) if path_tudo_final else None,
         'fmt_tudo_final': fmt_tudo_final if path_tudo_final else None,

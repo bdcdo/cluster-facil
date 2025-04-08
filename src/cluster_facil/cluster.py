@@ -269,8 +269,12 @@ class ClusterFacil():
         final_tfidf_kwargs = {**default_tfidf_params, **self._tfidf_kwargs}
         logging.debug(f"Parâmetros finais para TfidfVectorizer: {final_tfidf_kwargs}") # Movido para DEBUG
 
-        # Cria um novo vectorizer ou reutiliza/reajusta?
-        # Para garantir que o vocabulário se adapte ao subset, é melhor criar um novo.
+        # Cria um novo vectorizer a cada chamada de 'preparar'.
+        # Porquê? Para garantir que o vocabulário (features) do TF-IDF seja aprendido
+        # *especificamente* a partir dos textos que estão sendo processados *nesta rodada*.
+        # Isso é crucial em rodadas > 1, onde textos já classificados são filtrados.
+        # Reutilizar um vectorizer antigo poderia incluir features de textos que não
+        # estão mais sendo considerados, distorcendo a análise dos textos restantes.
         self._vectorizer = TfidfVectorizer(**final_tfidf_kwargs)
         self.X = self._vectorizer.fit_transform(textos_processados)
         self._indices_preparados_na_rodada = indices_para_preparar # Armazena os índices correspondentes a X
