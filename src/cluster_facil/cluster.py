@@ -601,9 +601,6 @@ class ClusterFacil():
         # Validação: Coluna de classificação existe?
         validar_coluna_existe(self.df, self.nome_coluna_classificacao)
 
-        # Validação: Coluna de classificação existe?
-        validar_coluna_existe(self.df, self.nome_coluna_classificacao)
-
         # Validação: Classificação desejada existe?
         if classificacao_desejada not in self.df[self.nome_coluna_classificacao].dropna().unique(): # Adicionado dropna() para segurança
             msg = f"A classificação '{classificacao_desejada}' não foi encontrada na coluna '{self.nome_coluna_classificacao}'."
@@ -674,11 +671,7 @@ class ClusterFacil():
 
     def contar_classificacoes(self, inclui_na=False) -> pd.Series:
         """
-        Retorna a contagem de quantos textos pertencem a cada classificação manual atribuída.
-
-        Returns:
-            pd.Series: Uma tabela (Series) com as classificações como índice e suas contagens
-                       como valores. Retorna uma tabela vazia se a coluna não existir.
+        Loga a contagem de quantos textos pertencem a cada classificação manual atribuída.
         """
         if self.nome_coluna_classificacao not in self.df.columns:
             logging.warning(f"Coluna de classificação '{self.nome_coluna_classificacao}' não encontrada. Não há contagem para retornar.")
@@ -686,4 +679,4 @@ class ClusterFacil():
 
         contagem = self.df[self.nome_coluna_classificacao].value_counts(dropna=inclui_na)
         logging.info(f"Contagem de textos por classificação manual na coluna '{self.nome_coluna_classificacao}':\n{contagem}")
-        return contagem
+        return None
