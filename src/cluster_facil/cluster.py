@@ -35,7 +35,7 @@ from .validations import (
     validar_formato_salvar
 )
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] %(message)s') # Adicionado nome do arquivo e linha
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class ClusterFacil():
     """
@@ -61,7 +61,7 @@ class ClusterFacil():
                  aba: Optional[str] = None,
                  prefixo_cluster: str = "cluster_",
                  nome_coluna_classificacao: str = "classificacao",
-                 random_state: Optional[int] = 42): # Adicionado random_state
+                 random_state: Optional[int] = 42):
         """
         Inicializa a classe ClusterFacil.
 
@@ -115,7 +115,6 @@ class ClusterFacil():
         logging.info(f"Próxima rodada de clusterização definida como: {self.rodada_clusterizacao}")
 
     # --- Métodos Privados Auxiliares ---
-
     def _atribuir_labels_cluster(self, cluster_labels: list[int], indices_alvo: pd.Index, nome_coluna_cluster: str) -> None:
         """
         Atribui os rótulos de cluster ao DataFrame principal.
@@ -148,7 +147,6 @@ class ClusterFacil():
             logging.error(f"Falha ao converter a coluna de resultados '{nome_coluna_cluster}' para o tipo numérico ideal: {e}.")
 
         logging.info(f"Coluna de resultados '{nome_coluna_cluster}' adicionada/atualizada.")
-
 
     def _garantir_coluna_classificacao(self) -> None:
         """
@@ -197,10 +195,6 @@ class ClusterFacil():
         Nota: A exibição automática do gráfico (`plotar_cotovelo=True`) funciona melhor
         em ambientes interativos como Jupyter Notebooks. Se estiver usando em um script,
         pode ser melhor definir `plotar_cotovelo=False`.
-
-        Nota 2: O cálculo para o gráfico do cotovelo agora usa `n_init='auto'` por padrão.
-        Isso busca um resultado mais robusto, mas pode levar um pouco mais de tempo
-        comparado a usar `n_init=1`. A clusterização final sempre usou `n_init='auto'`.
 
         Args:
             coluna_textos (str): O nome da coluna no seu DataFrame que contém os textos a serem agrupados.
@@ -476,7 +470,6 @@ class ClusterFacil():
 
         logging.info(f"Processo de salvamento concluído. Status: {resultados_salvamento}")
         return resultados_salvamento
-
 
     def classificar(self, cluster_ids: int | list[int], classificacao: str, rodada: Optional[int] = None) -> None:
         """
