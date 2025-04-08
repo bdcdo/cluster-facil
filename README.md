@@ -1,6 +1,7 @@
 # Cluster Fácil 🚀
 
 ![Python Version](https://img.shields.io/badge/python-3.8+-blue.svg)
+[![Documentation Status](https://readthedocs.org/projects/cluster-facil/badge/?version=latest)](https://cluster-facil.readthedocs.io/pt-br/latest/?badge=latest)
 
 Uma biblioteca Python intuitiva para realizar clusterização de documentos textuais. Simplifica o processo desde a preparação dos dados e análise do número ideal de clusters até a aplicação do algoritmo e exportação dos resultados. Ideal para agrupar grandes volumes de texto, como decisões judiciais, artigos ou comentários, de forma eficiente e com poucas linhas de código.
 
@@ -104,18 +105,13 @@ Temos planos para continuar melhorando o Cluster Fácil! Aqui estão algumas ide
 
 Se você tem outras ideias ou gostaria de ajudar, veja a seção de Contribuição!
 
-## Documentação
+## 📖 Documentação
 
-A documentação completa da API, gerada automaticamente a partir das docstrings do código usando Sphinx, está disponível na pasta `docs/`.
+A documentação completa, incluindo guias de uso e a referência detalhada da API, está disponível online e é gerada automaticamente a partir do código fonte:
 
-Para construir a documentação HTML localmente:
+➡️ **[cluster-facil.readthedocs.io](https://cluster-facil.readthedocs.io/pt-br/latest/)**
 
-1.  Instale as dependências: `pip install -r docs/requirements.txt`
-2.  Navegue até a pasta `docs/`: `cd docs`
-3.  Execute o comando de build: `make html` (Linux/macOS) ou `.\make.bat html` (Windows)
-4.  Abra o arquivo `docs/_build/html/index.html` no seu navegador.
-
-Você também pode encontrar um exemplo de uso mais detalhado no notebook [`examples/uso_basico.ipynb`](examples/uso_basico.ipynb).
+Para um exemplo prático, veja o notebook [`examples/uso_basico.ipynb`](examples/uso_basico.ipynb).
 
 ## Contribuição
 

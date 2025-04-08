@@ -20,4 +20,6 @@ sphinx:
 # Veja https://docs.readthedocs.io/en/stable/guides/reproducible-builds.html
 python:
    install:
-   - requirements: docs/requirements.txt # Instala a partir do seu arquivo de requisitos
+   - requirements: docs/requirements.txt # Instala a partir do seu arquivo de requisitos de docs
+   - method: pip                         # Adicionado: Instala o pacote do projeto
+     path: .                           # Adicionado: A partir do diretório raiz
