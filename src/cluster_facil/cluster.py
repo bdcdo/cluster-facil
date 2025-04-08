@@ -8,7 +8,7 @@ import re
 import os
 
 from .utils import (
-    stop_words_pt,
+    STOPWORDS_PT, # Corrigido para usar o nome da constante
     calcular_e_plotar_cotovelo,
     salvar_dataframe,
     salvar_amostras,
@@ -297,7 +297,7 @@ class ClusterFacil():
         logging.info("Calculando TF-IDF inicial...")
         self._tfidf_kwargs = tfidf_kwargs # Armazena os kwargs passados
         # Define parâmetros padrão que podem ser sobrescritos pelos kwargs
-        default_tfidf_params = {'stop_words': stop_words_pt}
+        default_tfidf_params = {'stop_words': STOPWORDS_PT} # Corrigido para usar o nome da constante
         final_tfidf_kwargs = {**default_tfidf_params, **self._tfidf_kwargs} # kwargs do usuário têm precedência
         logging.info(f"Parâmetros finais para TfidfVectorizer: {final_tfidf_kwargs}")
         self._vectorizer = TfidfVectorizer(**final_tfidf_kwargs)
@@ -321,12 +321,23 @@ class ClusterFacil():
         """
         Executa a clusterização K-Means e adiciona a coluna de clusters ao DataFrame.
 
-        Nota sobre múltiplas rodadas: Se a coluna de classificação (self.nome_coluna_classificacao)
-        existir e contiver linhas já classificadas, esta função irá (por padrão) clusterizar
-        apenas as linhas *não* classificadas. O TF-IDF será recalculado *apenas* para este
-        subset, o que significa que o espaço vetorial (vocabulário, pesos IDF) pode
-        mudar entre as rodadas. Este comportamento é intencional para focar a nova
-        clusterização nos dados remanescentes.
+        **Nota sobre Reprodutibilidade e Múltiplas Rodadas:**
+        Se a coluna de classificação (`self.nome_coluna_classificacao`) existir e contiver
+        linhas já classificadas em rodadas anteriores, esta função irá, por padrão,
+        clusterizar apenas as linhas *não* classificadas. O TF-IDF será recalculado
+        *apenas* para este subconjunto de dados.
+
+        **Implicações:**
+        *   **Intenção:** Focar a nova clusterização nos dados remanescentes, adaptando-se
+            ao vocabulário e distribuição de termos desse subconjunto.
+        *   **Reprodutibilidade:** O espaço vetorial (vocabulário, pesos IDF) *pode mudar*
+            entre rodadas se houver classificações intermediárias. Isso significa que
+            comparar diretamente os resultados de cluster (ex: distribuição de documentos
+            em clusters) entre rodadas diferentes pode não ser trivial, pois eles podem
+            ter sido gerados a partir de representações TF-IDF distintas. A reprodutibilidade
+            *dentro* de uma mesma execução (com mesmo `random_state` e dados de entrada
+            para a rodada) é mantida, mas a comparação *entre* rodadas é afetada por
+            este recálculo adaptativo.
 
         Args:
             num_clusters (int): O número de clusters (K) a ser usado.

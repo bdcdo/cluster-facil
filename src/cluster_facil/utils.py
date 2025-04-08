@@ -61,33 +61,45 @@ def ajustar_rodada_inicial(colunas: pd.Index, prefixo_cluster: str) -> int:
         proxima_rodada = 1 # Garante que seja 1 se nenhuma for encontrada
     return proxima_rodada
 
-# --- Carregamento de Stopwords (Executado na importação do módulo) ---
-stop_words_pt: list[str] = []
-try:
-    stop_words_pt_set = set(stopwords.words('portuguese'))
-    stop_words_pt = [str(word).lower() for word in stop_words_pt_set] # Garante que word seja string antes de lower()
-    logging.info("Stopwords em português carregadas do NLTK.")
-except LookupError:
-    logging.warning("Recurso 'stopwords' do NLTK não encontrado. Tentando baixar...")
-    try:
-        nltk.download('stopwords')
-        stop_words_pt_set = set(stopwords.words('portuguese'))
-        stop_words_pt = [word.lower() for word in stop_words_pt_set]
-        logging.info("Download de 'stopwords' concluído e stopwords carregadas.")
-    except Exception as e:
-        logging.error(
-            f"Falha ao baixar 'stopwords' do NLTK: {e}. "
-            "Verifique sua conexão ou firewall. Stopwords não serão usadas."
-        )
-except Exception as e:
-    logging.error(
-        f"Erro inesperado ao carregar stopwords: {e}. Stopwords não serão usadas."
-    )
+# --- Constante de Stopwords (Internalizada para Reprodutibilidade) ---
+# Lista de stopwords em português (baseada no NLTK 3.9.1)
+STOPWORDS_PT: tuple[str, ...] = (
+    'a', 'à', 'ao', 'aos', 'aquela', 'aquelas', 'aquele', 'aqueles', 'aquilo', 'as',
+    'às', 'até', 'com', 'como', 'da', 'das', 'de', 'dela', 'delas', 'dele', 'deles',
+    'depois', 'do', 'dos', 'e', 'é', 'ela', 'elas', 'ele', 'eles', 'em', 'entre',
+    'era', 'eram', 'éramos', 'essa', 'essas', 'esse', 'esses', 'esta', 'está',
+    'estamos', 'estão', 'estar', 'estas', 'estava', 'estavam', 'estávamos', 'este',
+    'esteja', 'estejam', 'estejamos', 'estes', 'esteve', 'estive', 'estivemos',
+    'estiver', 'estivera', 'estiveram', 'estivéramos', 'estiverem', 'estivermos',
+    'estivesse', 'estivessem', 'estivéssemos', 'estou', 'eu', 'foi', 'fomos', 'for',
+    'fora', 'foram', 'fôramos', 'forem', 'formos', 'fosse', 'fossem', 'fôssemos',
+    'fui', 'há', 'haja', 'hajam', 'hajamos', 'hão', 'havemos', 'haver', 'hei',
+    'houve', 'houvemos', 'houver', 'houvera', 'houverá', 'houveram', 'houvéramos',
+    'houverão', 'houverei', 'houverem', 'houveremos', 'houveria', 'houveriam',
+    'houveríamos', 'houvermos', 'houvesse', 'houvessem', 'houvéssemos', 'isso',
+    'isto', 'já', 'lhe', 'lhes', 'mais', 'mas', 'me', 'mesmo', 'meu', 'meus',
+    'minha', 'minhas', 'muito', 'na', 'não', 'nas', 'nem', 'no', 'nos', 'nós',
+    'nossa', 'nossas', 'nosso', 'nossos', 'num', 'numa', 'o', 'os', 'ou', 'para',
+    'pela', 'pelas', 'pelo', 'pelos', 'por', 'qual', 'quando', 'que', 'quem', 'são',
+    'se', 'seja', 'sejam', 'sejamos', 'sem', 'ser', 'será', 'serão', 'serei',
+    'seremos', 'seria', 'seriam', 'seríamos', 'seu', 'seus', 'só', 'somos', 'sou',
+    'sua', 'suas', 'também', 'te', 'tem', 'tém', 'temos', 'tenha', 'tenham',
+    'tenhamos', 'tenho', 'terá', 'terão', 'terei', 'teremos', 'teria', 'teriam',
+    'teríamos', 'teu', 'teus', 'teve', 'tinha', 'tinham', 'tínhamos', 'tive',
+    'tivemos', 'tiver', 'tivera', 'tiveram', 'tivéramos', 'tiverem', 'tivermos',
+    'tivesse', 'tivessem', 'tivéssemos', 'tu', 'tua', 'tuas', 'um', 'uma', 'você',
+    'vocês', 'vos'
+)
 
 # --- Funções de Carregamento de Dados ---
-def carregar_dados(caminho_arquivo: str, aba: str | None = None) -> pd.DataFrame:
+def carregar_dados(
+    caminho_arquivo: str,
+    aba: str | None = None,
+    dtype: dict | None = None,
+    encoding: str | None = 'utf-8-sig' # Padrão para CSV/JSON, lida com BOM
+) -> pd.DataFrame:
     """
-    Carrega dados de um arquivo usando Pandas.
+    Carrega dados de um arquivo usando Pandas, com opções para maior reprodutibilidade.
 
     Suporta CSV, Excel (.xlsx), Parquet e JSON.
 
@@ -96,6 +108,15 @@ def carregar_dados(caminho_arquivo: str, aba: str | None = None) -> pd.DataFrame
         aba (str | None, optional): O nome ou índice da aba a ser lida caso a entrada
                                     seja um caminho para um arquivo Excel (.xlsx).
                                     Se None (padrão), lê a primeira aba. Padrão é None.
+        dtype (dict | None, optional): Dicionário mapeando nomes de colunas para tipos
+                                       (ex: {'coluna_id': int, 'texto': str}).
+                                       Ajuda a garantir a consistência na leitura.
+                                       Padrão é None (Pandas infere os tipos).
+        encoding (str | None, optional): Codificação a ser usada ao ler arquivos de texto
+                                         (CSV, JSON). Padrão é 'utf-8-sig', que lida
+                                         com o BOM (Byte Order Mark) comum em arquivos
+                                         UTF-8 gerados no Windows. Se None, o Pandas
+                                         tentará detectar a codificação.
 
     Returns:
         pd.DataFrame: O DataFrame carregado.
@@ -113,15 +134,21 @@ def carregar_dados(caminho_arquivo: str, aba: str | None = None) -> pd.DataFrame
     validar_formato_suportado(extensao)
     validar_dependencia_leitura(extensao)
 
+    logging.info(f"Parâmetros de leitura: aba='{aba}', dtype={'especificado' if dtype else 'inferido'}, encoding='{encoding}' (para CSV/JSON)")
+
     try:
         if extensao == '.csv':
-            df = pd.read_csv(caminho_arquivo)
+            df = pd.read_csv(caminho_arquivo, dtype=dtype, encoding=encoding)
         elif extensao == '.xlsx':
-            df = pd.read_excel(caminho_arquivo, sheet_name=aba)
+            # read_excel não usa encoding diretamente, mas usa dtype
+            df = pd.read_excel(caminho_arquivo, sheet_name=aba, dtype=dtype)
         elif extensao == '.parquet':
+            # read_parquet não usa encoding; dtype pode ser inferido ou especificado via 'columns'
+            # Para simplificar, não passamos dtype aqui, mas a opção existe se necessário.
             df = pd.read_parquet(caminho_arquivo)
         elif extensao == '.json':
-            df = pd.read_json(caminho_arquivo)
+            df = pd.read_json(caminho_arquivo, dtype=dtype, encoding=encoding)
+        # else: # Não é necessário, validar_formato_suportado já garante um dos formatos acima
 
         logging.info(f"Arquivo {caminho_arquivo} carregado com sucesso. Shape: {df.shape}")
         return df
