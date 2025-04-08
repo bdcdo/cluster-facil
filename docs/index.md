@@ -9,14 +9,14 @@ Esta documentação fornece detalhes sobre a instalação, uso e a API da biblio
 :caption: Conteúdo:
 
 usage
-api
+source/api/modules
 ```
 
 ## Visão Geral
 
 *   **Instalação e Uso Rápido:** Veja o [README.md principal](https://github.com/bdcdo/cluster-facil/blob/main/README.md) no repositório.
 *   **Exemplo Detalhado:** Explore o [Notebook de Exemplo](https://github.com/bdcdo/cluster-facil/blob/main/examples/uso_basico.ipynb).
-*   **Documentação da API:** Detalhes sobre classes e métodos estão na seção [API Reference](api.md).
+*   **Referência da API:** Detalhes sobre classes e métodos estão na seção de Referência da API.
 
 ## Índices e Tabelas
 
