@@ -17,19 +17,9 @@ Você pode instalar a biblioteca diretamente do GitHub usando pip:
 pip install git+https://github.com/bdcdo/cluster-facil.git
 ```
 
-**Dependências:**
-
-*   **Principais:** `pandas`, `scikit-learn`, `nltk`, `scipy` (instaladas automaticamente).
-*   **Plotagem:** `matplotlib` (necessária se `plotar_cotovelo=True` em `preparar`). Instale com `pip install matplotlib`.
-*   **Leitura/Escrita Excel:** `openpyxl` (necessária para ler/salvar `.xlsx`). Instale com `pip install openpyxl`.
-*   **Leitura/Escrita Parquet:** `pyarrow` (necessária para ler/salvar `.parquet`). Instale com `pip install pyarrow`.
-*   **Documentação (Opcional, para construir localmente):** `sphinx`, `sphinx_rtd_theme`, `myst-parser`. Instale com `pip install sphinx sphinx_rtd_theme myst-parser`.
-
 ## Uso Rápido (Quick Start)
 
 Clusterizar textos de uma planilha Excel (`.xlsx`) com poucas linhas de código:
-
-*(Nota: Certifique-se de ter `openpyxl` instalado: `pip install openpyxl`)*
 
 ```python
 from cluster_facil import ClusterFacil
@@ -37,7 +27,8 @@ from cluster_facil import ClusterFacil
 cf = ClusterFacil('suaPlanilha.xlsx')
 cf.preparar(coluna_textos='nome_da_coluna_com_textos')
 # (Analise o gráfico do cotovelo que será exibido para escolher o K)
-cf.finalizar(num_clusters=3) # Substitua 3 pelo K escolhido
+cf.clusterizar(num_clusters=5) # Substitua 3 pelo K escolhido
+cf.salvar()
 ```
 
 Isso realizará todo o processo: carregamento, pré-processamento, análise do cotovelo, clusterização e salvamento dos resultados (DataFrame completo e amostras).
@@ -93,17 +84,6 @@ A classe `ClusterFacil` oferece os seguintes métodos principais:
 *   `listar_classificacoes()`: Retorna uma lista das classificações únicas presentes.
 *   `contar_classificacoes()`: Retorna uma Series Pandas com a contagem de cada classificação.
 *   `obter_subcluster_df(classificacao_desejada)`: Retorna um DataFrame filtrado por uma classificação, sem iniciar uma nova instância `ClusterFacil`.
-
-## Roadmap Futuro 🗺️
-
-Temos planos para continuar melhorando o Cluster Fácil! Aqui estão algumas ideias:
-
-*   **Configuração do Método do Cotovelo:** Avaliar o uso de `n_init` maior que 1 no cálculo do método do cotovelo para maior estabilidade do gráfico (atualmente `n_init=1` por padrão em `preparar` para agilidade).
-*   **Sugestão de K:** Integrar uma ferramenta (como `kneed`) para analisar o gráfico do cotovelo e *sugerir* um número de clusters (K) ideal.
-*   **Interpretação dos Clusters:** Adicionar uma funcionalidade para mostrar as palavras/termos mais importantes de cada cluster, ajudando a entender o "tema" de cada grupo.
-*   **Conjunto de Dados para Testes:** Criar um conjunto de dados de exemplo (ex: decisões judiciais anonimizadas) para facilitar testes e demonstrações.
-
-Se você tem outras ideias ou gostaria de ajudar, veja a seção de Contribuição!
 
 ## 📖 Documentação
 
