@@ -18,9 +18,6 @@ from .utils import (
 )
 from .validations import (
     validar_entrada_inicial,
-    validar_arquivo_existe,
-    validar_dependencia_leitura,
-    validar_formato_suportado,
     validar_coluna_existe,
     validar_inteiro_positivo,
     validar_tipo_coluna_texto,
@@ -31,8 +28,7 @@ from .validations import (
     validar_rodada_valida,
     validar_cluster_ids_presentes,
     validar_tipo_classificacao,
-    validar_opcao_salvar,
-    validar_formato_salvar
+    validar_opcao_salvar
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -676,7 +672,7 @@ class ClusterFacil():
         logging.info(f"Classificações manuais únicas encontradas: {classificacoes_unicas}")
         return classificacoes_unicas
 
-    def contar_classificacoes(self) -> pd.Series:
+    def contar_classificacoes(self, inclui_na=False) -> pd.Series:
         """
         Retorna a contagem de quantos textos pertencem a cada classificação manual atribuída.
 
@@ -688,6 +684,6 @@ class ClusterFacil():
             logging.warning(f"Coluna de classificação '{self.nome_coluna_classificacao}' não encontrada. Não há contagem para retornar.")
             return pd.Series(dtype=int) # Retorna Series vazia com tipo int
 
-        contagem = self.df[self.nome_coluna_classificacao].value_counts(dropna=True) # dropna=True é o padrão, mas explícito
+        contagem = self.df[self.nome_coluna_classificacao].value_counts(dropna=inclui_na)
         logging.info(f"Contagem de textos por classificação manual na coluna '{self.nome_coluna_classificacao}':\n{contagem}")
         return contagem
