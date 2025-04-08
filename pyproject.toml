@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cluster-facil"
-version = "0.1.0"
+version = "0.2.0"
 authors = [
   { name="Bruno da Cunha de Oliveira", email="bruno.dcdo@gmail.com" },
 ]
@@ -30,7 +30,7 @@ dependencies = [
     "scipy==1.15.2",
     "openpyxl==3.1.5",
     "pyarrow==19.0.1",
-    "tqdm" # Adicionado para barra de progresso
+    "tqdm"
 ]
 
 [project.urls]
