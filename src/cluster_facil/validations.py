@@ -4,7 +4,7 @@
 import importlib
 import logging
 import os
-from typing import Any, TYPE_CHECKING # Removido Optional, Union
+from typing import Any, TYPE_CHECKING
 import pandas as pd
 from scipy.sparse import csr_matrix
 

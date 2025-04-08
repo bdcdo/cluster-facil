@@ -4,12 +4,9 @@
 # --- Importações ---
 import logging
 import os
-import re # Adicionado re
-# import matplotlib.pyplot as plt # Removido do topo
-import nltk
+import re
 import pandas as pd
-from tqdm import tqdm # Adicionado tqdm
-# Removido List, Optional, Union de typing
+from tqdm import tqdm
 from nltk.corpus import stopwords
 from scipy.sparse import csr_matrix
 from sklearn.cluster import KMeans
@@ -21,17 +18,11 @@ from .validations import (
     validar_coluna_existe,
     validar_inteiro_positivo,
     validar_dependencia,
-    validar_dependencia_leitura, # Adicionado para uso em salvar_dataframe
-    validar_formato_salvar # Importado para determinar_caminhos_saida
+    validar_dependencia_leitura,
+    validar_formato_salvar
 )
 
-# --- Configuração de Logging ---
-# O logging é configurado no cluster.py, não precisa reconfigurar aqui
-# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] %(message)s')
-
-
 # --- Funções de Ajuste e Preparação ---
-
 def ajustar_rodada_inicial(colunas: pd.Index, prefixo_cluster: str) -> int:
     """
     Verifica colunas existentes com o prefixo fornecido e determina a próxima rodada.
@@ -147,13 +138,10 @@ def carregar_dados(
         elif extensao == '.parquet':
             # read_parquet não usa encoding; dtype pode ser inferido ou especificado via 'columns'
             # Para simplificar, não passamos dtype aqui, mas a opção existe se necessário.
-            # read_parquet não usa encoding; dtype pode ser inferido ou especificado via 'columns'
-            # Para simplificar, não passamos dtype aqui, mas a opção existe se necessário.
             df = pd.read_parquet(caminho_arquivo)
         elif extensao == '.json':
             # orient='records' é um padrão comum para JSON linha a linha ou lista de objetos
             df = pd.read_json(caminho_arquivo, dtype=dtype, encoding=encoding, orient='records')
-        # else: # Não é necessário, validar_formato_suportado já garante um dos formatos acima
 
         logging.info(f"Arquivo '{os.path.basename(caminho_arquivo)}' carregado com sucesso ({df.shape[0]} linhas, {df.shape[1]} colunas).")
         logging.debug(f"Caminho completo do arquivo carregado: {caminho_arquivo}") # DEBUG
@@ -164,7 +152,6 @@ def carregar_dados(
         raise ValueError(f"Erro ao processar o arquivo {caminho_arquivo}: {e}")
 
 # --- Funções de Análise e Plotagem ---
-
 def calcular_inercias_kmeans(X: csr_matrix, limite_k: int, n_init: str | int = 'auto', random_state: int | None = 42) -> list[float] | None: # n_init agora aceita 'auto'
     """
     Calcula as inércias (uma medida de coesão interna dos grupos) do K-Means para diferentes números de grupos (K).
@@ -313,7 +300,6 @@ def calcular_e_plotar_cotovelo(X: csr_matrix, limite_k: int, n_init: str | int =
     return inercias
 
 # --- Funções de Salvamento de Dados ---
-
 def determinar_caminhos_saida(
     o_que_salvar: str,
     formato_tudo: str,
@@ -611,9 +597,7 @@ def salvar_amostras(df: pd.DataFrame, nome_coluna_cluster: str, num_clusters: in
 
     return True # Retorna True se salvou com sucesso ou se não havia amostras
 
-
 # --- Funções de Subcluster ---
-
 def criar_df_subcluster(df: pd.DataFrame, nome_coluna_classificacao: str, classificacao_desejada: str) -> pd.DataFrame:
     """
     Filtra uma tabela (DataFrame) por uma classificação manual específica, remove colunas
