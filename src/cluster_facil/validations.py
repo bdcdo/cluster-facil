@@ -4,7 +4,7 @@
 import importlib
 import logging
 import os
-from typing import Any, Optional, TYPE_CHECKING, Union
+from typing import Any, TYPE_CHECKING # Removido Optional, Union
 import pandas as pd
 from scipy.sparse import csr_matrix
 
@@ -100,15 +100,26 @@ def validar_parametro_num_clusters(num_clusters: Any, num_amostras: int) -> None
 # --- Validações de Estado da Instância ---
 def validar_estado_preparado(instance: 'ClusterFacil') -> None:
     """Verifica se o método 'preparar' foi executado e se há dados."""
-    if instance.X is None or instance.coluna_textos is None:
-        msg = "O método 'preparar' deve ser executado antes desta operação."
+    # Verifica se a coluna de textos foi definida
+    if instance.coluna_textos is None:
+        msg = "O método 'preparar' deve ser executado antes desta operação (coluna_textos não definida)."
         logging.error(msg)
         raise RuntimeError(msg)
-    # Verifica se a matriz X existe e tem linhas
-    if not isinstance(instance.X, csr_matrix) or instance.X.shape[0] == 0:
-         msg = "Não há dados para processar (matriz X vazia). Execute 'preparar' com um DataFrame que contenha dados."
-         logging.error(msg)
-         raise RuntimeError(msg)
+    # Verifica se a matriz X foi criada
+    if instance.X is None:
+        msg = "O método 'preparar' deve ser executado antes desta operação (matriz X não calculada)."
+        logging.error(msg)
+        raise RuntimeError(msg)
+    # Verifica se a matriz X tem linhas (só faz sentido se for csr_matrix)
+    if isinstance(instance.X, csr_matrix) and instance.X.shape[0] == 0:
+        msg = "Não há dados para processar (matriz X vazia). Execute 'preparar' com um DataFrame que contenha dados."
+        logging.error(msg)
+        raise RuntimeError(msg)
+    # Adiciona verificação se X não é csr_matrix (caso inesperado)
+    elif not isinstance(instance.X, csr_matrix):
+        msg = f"Estado inesperado: instance.X não é uma csr_matrix (tipo: {type(instance.X)}). Execute 'preparar' novamente."
+        logging.error(msg)
+        raise RuntimeError(msg)
 
 # --- Validações para 'classificar' ---
 def validar_rodada_valida(rodada_alvo: int, rodada_atual_sistema: int, prefixo_cluster: str = "cluster_") -> None:

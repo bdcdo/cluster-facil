@@ -5,10 +5,10 @@
 import logging
 import os
 import re # Adicionado re
-from typing import List, Optional, Union # Adicionado Union
 # import matplotlib.pyplot as plt # Removido do topo
 import nltk
 import pandas as pd
+# Removido List, Optional, Union de typing
 from nltk.corpus import stopwords
 from scipy.sparse import csr_matrix
 from sklearn.cluster import KMeans
@@ -62,10 +62,10 @@ def ajustar_rodada_inicial(colunas: pd.Index, prefixo_cluster: str) -> int:
     return proxima_rodada
 
 # --- Carregamento de Stopwords (Executado na importação do módulo) ---
-stop_words_pt: List[str] = []
+stop_words_pt: list[str] = []
 try:
     stop_words_pt_set = set(stopwords.words('portuguese'))
-    stop_words_pt = [word.lower() for word in stop_words_pt_set]
+    stop_words_pt = [str(word).lower() for word in stop_words_pt_set] # Garante que word seja string antes de lower()
     logging.info("Stopwords em português carregadas do NLTK.")
 except LookupError:
     logging.warning("Recurso 'stopwords' do NLTK não encontrado. Tentando baixar...")
@@ -85,7 +85,7 @@ except Exception as e:
     )
 
 # --- Funções de Carregamento de Dados ---
-def carregar_dados(caminho_arquivo: str, aba: Optional[str] = None) -> pd.DataFrame:
+def carregar_dados(caminho_arquivo: str, aba: str | None = None) -> pd.DataFrame:
     """
     Carrega dados de um arquivo usando Pandas.
 
@@ -93,9 +93,9 @@ def carregar_dados(caminho_arquivo: str, aba: Optional[str] = None) -> pd.DataFr
 
     Args:
         caminho_arquivo (str): O caminho para o arquivo de dados.
-        aba (Optional[str], optional): O nome ou índice da aba a ser lida caso a entrada
-                                       seja um caminho para um arquivo Excel (.xlsx).
-                                       Se None (padrão), lê a primeira aba. Padrão é None.
+        aba (str | None, optional): O nome ou índice da aba a ser lida caso a entrada
+                                    seja um caminho para um arquivo Excel (.xlsx).
+                                    Se None (padrão), lê a primeira aba. Padrão é None.
 
     Returns:
         pd.DataFrame: O DataFrame carregado.
@@ -132,7 +132,7 @@ def carregar_dados(caminho_arquivo: str, aba: Optional[str] = None) -> pd.DataFr
 
 # --- Funções de Análise e Plotagem ---
 
-def calcular_inercias_kmeans(X: csr_matrix, limite_k: int, n_init: int = 1, random_state: Optional[int] = 42) -> Optional[List[float]]: # Adicionado random_state
+def calcular_inercias_kmeans(X: csr_matrix, limite_k: int, n_init: int = 1, random_state: int | None = 42) -> list[float] | None: # Adicionado random_state
     """
     Calcula as inércias do K-Means para diferentes valores de K.
 
@@ -140,10 +140,10 @@ def calcular_inercias_kmeans(X: csr_matrix, limite_k: int, n_init: int = 1, rand
         X (csr_matrix): Matriz TF-IDF dos dados.
         limite_k (int): Número máximo de clusters (K) a testar.
         n_init (int): Número de inicializações do K-Means. Padrão é 1.
-        random_state (Optional[int], optional): Semente para o gerador de números aleatórios. Padrão é 42.
+        random_state (int | None, optional): Semente para o gerador de números aleatórios. Padrão é 42.
 
     Returns:
-        Optional[List[float]]: Lista de inércias calculadas, ou None se não houver amostras.
+        list[float] | None: Lista de inércias calculadas, ou None se não houver amostras.
     """
     logging.info("Calculando inércias para o método do cotovelo...")
     validar_inteiro_positivo('n_init', n_init) # Valida o n_init recebido
@@ -189,13 +189,13 @@ def _plotar_cotovelo_sem_dados():
     plt.grid(True)
     plt.show()
 
-def plotar_grafico_cotovelo(k_range: range, inercias: List[float]):
+def plotar_grafico_cotovelo(k_range: range, inercias: list[float]):
     """
     Plota o gráfico do método do cotovelo.
 
     Args:
         k_range (range): O range de valores de K utilizados.
-        inercias (List[float]): A lista de inércias correspondente a cada K.
+        inercias (list[float]): A lista de inércias correspondente a cada K.
     """
     try:
         validar_dependencia('matplotlib', "A biblioteca 'matplotlib' é necessária para plotar gráficos. Instale-a com 'pip install matplotlib'")
@@ -216,7 +216,7 @@ def plotar_grafico_cotovelo(k_range: range, inercias: List[float]):
     logging.info("Exibindo gráfico do método do cotovelo...")
     plt.show()
 
-def calcular_e_plotar_cotovelo(X: csr_matrix, limite_k: int, n_init: int = 1, plotar: bool = True, random_state: Optional[int] = 42) -> Optional[List[float]]: # Adicionado random_state
+def calcular_e_plotar_cotovelo(X: csr_matrix, limite_k: int, n_init: int = 1, plotar: bool = True, random_state: int | None = 42) -> list[float] | None: # Adicionado random_state
     """
     Calcula as inércias para diferentes valores de K e opcionalmente plota o gráfico do método do cotovelo.
 
@@ -227,10 +227,10 @@ def calcular_e_plotar_cotovelo(X: csr_matrix, limite_k: int, n_init: int = 1, pl
         limite_k (int): Número máximo de clusters (K) a testar.
         n_init (int, optional): Número de inicializações do K-Means para cálculo da inércia. Padrão é 1.
         plotar (bool, optional): Se True (padrão), exibe o gráfico do cotovelo. Padrão é True.
-        random_state (Optional[int], optional): Semente para o gerador de números aleatórios. Padrão é 42.
+        random_state (int | None, optional): Semente para o gerador de números aleatórios. Padrão é 42.
 
     Returns:
-        Optional[List[float]]: Lista de inércias calculadas, ou None se não houver dados.
+        list[float] | None: Lista de inércias calculadas, ou None se não houver dados.
     """
     # Passa o random_state para a função de cálculo
     inercias = calcular_inercias_kmeans(X, limite_k, n_init, random_state=random_state)
@@ -255,13 +255,13 @@ def determinar_caminhos_saida(
     o_que_salvar: str,
     formato_tudo: str,
     formato_amostras: str,
-    caminho_tudo: Optional[str],
-    caminho_amostras: Optional[str],
-    diretorio_saida: Optional[str],
-    input_path: Optional[str], # Para nome base padrão
+    caminho_tudo: str | None,
+    caminho_amostras: str | None,
+    diretorio_saida: str | None,
+    input_path: str | None, # Para nome base padrão
     rodada_a_salvar: int,
     prefixo_cluster: str = "cluster_" # Adicionado prefixo
-) -> dict[str, Optional[str]]:
+) -> dict[str, str | None]:
     """
     Determina os caminhos e formatos finais para salvar os resultados.
 
@@ -272,16 +272,16 @@ def determinar_caminhos_saida(
         o_que_salvar (str): 'tudo', 'amostras', ou 'ambos'.
         formato_tudo (str): Formato padrão para DataFrame completo ('csv', 'xlsx', etc.).
         formato_amostras (str): Formato padrão para amostras ('xlsx', 'csv', etc.).
-        caminho_tudo (Optional[str]): Caminho explícito para DataFrame completo.
-        caminho_amostras (Optional[str]): Caminho explícito para amostras.
-        diretorio_saida (Optional[str]): Diretório padrão para salvar.
-        input_path (Optional[str]): Caminho do arquivo de entrada original (para nome base).
+        caminho_tudo (str | None): Caminho explícito para DataFrame completo.
+        caminho_amostras (str | None): Caminho explícito para amostras.
+        diretorio_saida (str | None): Diretório padrão para salvar.
+        input_path (str | None): Caminho do arquivo de entrada original (para nome base).
         rodada_a_salvar (int): Número da rodada sendo salva.
         prefixo_cluster (str, optional): Prefixo usado para as colunas de cluster
                                          (ex: 'cluster_', 'subcluster_'). Padrão é 'cluster_'.
 
     Returns:
-        dict[str, Optional[str]]: Dicionário contendo:
+        dict[str, str | None]: Dicionário contendo:
             'path_tudo_final': Caminho absoluto final para o DataFrame completo (ou None).
             'fmt_tudo_final': Formato final para o DataFrame completo (ou None).
             'path_amostras_final': Caminho absoluto final para as amostras (ou None).
@@ -291,8 +291,8 @@ def determinar_caminhos_saida(
         ValueError: Se algum formato fornecido (explícito ou padrão) for inválido.
     """
     logging.debug("Determinando caminhos e formatos de saída...")
-    path_tudo_final: Optional[str] = None
-    path_amostras_final: Optional[str] = None
+    path_tudo_final: str | None = None
+    path_amostras_final: str | None = None
     fmt_tudo_final = formato_tudo.lower()
     fmt_amostras_final = formato_amostras.lower()
 

@@ -1,7 +1,7 @@
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import KMeans
-from typing import Optional, List, Union, Self # Adicionado Self para type hint
+from typing import Optional, Self # Adicionado Self para type hint, removido List, Union
 from scipy.sparse import csr_matrix
 import logging
 import re
@@ -52,12 +52,13 @@ class ClusterFacil():
                                        inicializado em 1 e incrementado a cada chamada de `finaliza`.
             coluna_textos (Optional[str]): Nome da coluna contendo os textos a serem clusterizados.
             X (Optional[csr_matrix]): Matriz TF-IDF resultante do pré-processamento.
-            inercias (Optional[List[float]]): Lista de inercias calculadas para diferentes K no método do cotovelo.
+            inercias (Optional[list[float]]): Lista de inercias calculadas para diferentes K no método do cotovelo.
             prefixo_cluster (str): Prefixo usado para nomear as colunas de cluster (ex: 'cluster_', 'subcluster_').
             nome_coluna_classificacao (str): Nome da coluna usada para armazenar as classificações manuais.
+            random_state (Optional[int]): Semente para geradores de números aleatórios usada internamente.
     """
     def __init__(self,
-                 entrada: Union[pd.DataFrame, str],
+                 entrada: pd.DataFrame | str,
                  aba: Optional[str] = None,
                  prefixo_cluster: str = "cluster_",
                  nome_coluna_classificacao: str = "classificacao",
@@ -66,10 +67,10 @@ class ClusterFacil():
         Inicializa a classe ClusterFacil.
 
         Args:
-            entrada (Union[pd.DataFrame, str]): Pode ser um DataFrame do Pandas já carregado
-                                                 ou uma string contendo o caminho para um arquivo
-                                                 de dados (suporta .csv, .xlsx, .parquet, .json).
-                                                 O DataFrame ou arquivo deve incluir uma coluna
+            entrada (pd.DataFrame | str): Pode ser um DataFrame do Pandas já carregado
+                                          ou uma string contendo o caminho para um arquivo
+                                          de dados (suporta .csv, .xlsx, .parquet, .json).
+                                          O DataFrame ou arquivo deve incluir uma coluna
                                                  com os textos a serem clusterizados.
             aba (Optional[str], optional): O nome ou índice da aba a ser lida caso a entrada
                                            seja um caminho para um arquivo Excel (.xlsx).
@@ -102,7 +103,7 @@ class ClusterFacil():
         self.rodada_clusterizacao: int = 1
         self.coluna_textos: Optional[str] = None
         self.X: Optional[csr_matrix] = None # Matriz TF-IDF da última operação relevante
-        self.inercias: Optional[List[float]] = None
+        self.inercias: Optional[list[float]] = None
         self._ultimo_num_clusters: Optional[int] = None
         self._ultima_coluna_cluster: Optional[str] = None
         self._vectorizer: Optional[TfidfVectorizer] = None # Guardar o vectorizer para reuso
@@ -126,9 +127,12 @@ class ClusterFacil():
                                 linhas que foram selecionadas para esta rodada de
                                 clusterização. Retorna None se nenhuma linha for selecionada.
                                 Retorna self.df.index se todas as linhas forem usadas.
+
+        Raises:
+            RuntimeError: Se ocorrer um erro interno e a matriz TF-IDF (self.X) não estiver disponível.
         """
         df_para_clusterizar = self.df
-        indices_originais = self.df.index # Guarda todos os índices por padrão -
+        indices_originais = self.df.index # Guarda todos os índices por padrão
 
         # Lógica de Filtragem para Rodadas > 1
         # Usa o nome da coluna de classificação definido na instância
@@ -190,7 +194,7 @@ class ClusterFacil():
         coluna tenha o tipo Int64Dtype (inteiro nullable).
 
         Args:
-            cluster_labels (List[int]): Lista de rótulos de cluster retornados pelo K-Means.
+            cluster_labels (list[int]): Lista de rótulos de cluster retornados pelo K-Means.
             indices_alvo (pd.Index): Índices do DataFrame original onde os labels devem ser atribuídos.
             nome_coluna_cluster (str): Nome da coluna de cluster a ser criada/atualizada.
         """
@@ -278,6 +282,7 @@ class ClusterFacil():
             KeyError: Se o nome da coluna `coluna_textos` não existir no DataFrame.
             ValueError: Se `limite_k` não for um inteiro positivo.
             TypeError: Se a coluna especificada não contiver dados textuais (ou que possam ser convertidos para string).
+            ImportError: Se a biblioteca 'matplotlib' for necessária para plotar o gráfico do cotovelo (`plotar_cotovelo=True`) e não estiver instalada.
         """
         logging.info(f"Iniciando preparação com a coluna '{coluna_textos}' e limite K={limite_k}.")
 
@@ -392,7 +397,7 @@ class ClusterFacil():
                caminho_tudo: Optional[str] = None,
                caminho_amostras: Optional[str] = None,
                diretorio_saida: Optional[str] = None
-               ) -> dict[str, Union[bool, Optional[str]]]:
+               ) -> dict[str, bool | str | None]:
         """
         Salva os resultados da última clusterização realizada, com opções flexíveis.
 
@@ -423,9 +428,9 @@ class ClusterFacil():
                                                       não forem fornecidos. Padrão é None.
 
         Returns:
-            dict[str, Union[bool, Optional[str]]]: Dicionário com o status (True/False) e caminho absoluto
-                                                   de cada tipo de arquivo que foi salvo (ou tentou ser salvo).
-                                                   Ex: `{'tudo_salvo': True, 'caminho_tudo': '/caminho/abs/df.csv', 'amostras_salvas': False, 'caminho_amostras': None}`
+            dict[str, bool | str | None]: Dicionário com o status (True/False) e caminho absoluto
+                                          de cada tipo de arquivo que foi salvo (ou tentou ser salvo).
+                                          Ex: `{'tudo_salvo': True, 'caminho_tudo': '/caminho/abs/df.csv', 'amostras_salvas': False, 'caminho_amostras': None}`
 
         Raises:
             RuntimeError: Se nenhuma clusterização foi realizada ainda (`clusterizar` não foi chamado).
@@ -500,7 +505,7 @@ class ClusterFacil():
         return resultados_salvamento
 
 
-    def classificar(self, cluster_ids: Union[int, List[int]], classificacao: str, rodada: Optional[int] = None) -> None:
+    def classificar(self, cluster_ids: int | list[int], classificacao: str, rodada: Optional[int] = None) -> None:
         """
         Atribui uma classificação a um ou mais clusters de uma rodada específica.
 
@@ -510,8 +515,8 @@ class ClusterFacil():
         para as mesmas linhas sobrescreverão as anteriores.
 
         Args:
-            cluster_ids (Union[int, List[int]]): O ID do cluster ou uma lista de IDs
-                                                 de clusters a serem classificados.
+            cluster_ids (int | list[int]): O ID do cluster ou uma lista de IDs
+                                           de clusters a serem classificados.
             classificacao (str): O rótulo (string) de classificação a ser atribuído.
                                  Não pode ser uma string vazia.
             rodada (Optional[int], optional): O número da rodada de clusterização
@@ -544,6 +549,7 @@ class ClusterFacil():
         coluna_cluster_alvo = f'{self.prefixo_cluster}{rodada_alvo}'
         validar_coluna_existe(self.df, coluna_cluster_alvo) # Garante que a coluna da rodada existe
 
+        # Garante que cluster_ids seja uma lista para validação e uso
         lista_ids = cluster_ids if isinstance(cluster_ids, list) else [cluster_ids]
         # A validação de tipo e não vazio é feita dentro de validar_cluster_ids_presentes
         # Passa o prefixo para a validação
@@ -562,7 +568,7 @@ class ClusterFacil():
         logging.info("Classificação concluída.")
 
     # --- MÉTODO DE CONVENIÊNCIA ---
-    def finalizar(self, num_clusters: int, **kwargs_salvar) -> dict[str, Union[bool, Optional[str]]]:
+    def finalizar(self, num_clusters: int, **kwargs_salvar) -> dict[str, bool | str | None]:
         """
         Método de conveniência que executa a clusterização e depois salva os resultados.
 
@@ -577,8 +583,8 @@ class ClusterFacil():
                              `caminho_tudo`, `diretorio_saida`, etc.).
 
         Returns:
-            dict[str, Union[bool, Optional[str]]]: O dicionário retornado pelo método `salvar`,
-                                                   indicando o status e os caminhos dos arquivos.
+            dict[str, bool | str | None]: O dicionário retornado pelo método `salvar`,
+                                          indicando o status e os caminhos dos arquivos.
 
         Raises:
             RuntimeError: Se `preparar` não foi executado antes, se não há dados, ou se
@@ -723,12 +729,12 @@ class ClusterFacil():
         # Validações de coluna e classificação, filtragem e limpeza são feitas dentro de criar_df_subcluster
         return criar_df_subcluster(self.df, self.nome_coluna_classificacao, classificacao_desejada)
 
-    def listar_classificacoes(self) -> List[str]:
+    def listar_classificacoes(self) -> list[str]:
         """
         Retorna uma lista das classificações únicas (não nulas) presentes na coluna de classificação.
 
         Returns:
-            List[str]: Lista de strings das classificações únicas. Retorna lista vazia se
+            list[str]: Lista de strings das classificações únicas. Retorna lista vazia se
                        a coluna não existir ou não houver classificações.
         """
         if self.nome_coluna_classificacao not in self.df.columns:
