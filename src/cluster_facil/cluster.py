@@ -694,7 +694,7 @@ class ClusterFacil():
             cut_limit (int, opcional): Número máximo de textos a serem enviados para o LLM por cluster. Se None, usa todos. Default=30.
             random_state (int, opcional): Semente para amostragem aleatória dos textos. Default=None (não controla aleatoriedade).
             final_refine (bool): Se True, faz uma passada final no LLM para refinar/unificar rótulos. Default=True.
-            n_examples_final (int): Número de exemplos de texto por cluster enviados na revisão final. Default=2.
+            n_examples_final (int): Número de exemplos de texto por cluster enviados na revisão final. Default=10.
         Returns:
             dict: Dicionário mapeando cluster_id para rótulo final gerado.
         """
