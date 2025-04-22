@@ -30,6 +30,7 @@ from .validations import (
     validar_tipo_classificacao,
     validar_opcao_salvar
 )
+from .utils_auto_label import gerar_rotulo_cluster, refinar_rotulos_clusters
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -255,7 +256,7 @@ class ClusterFacil():
 
         logging.info(f"Analisando características de {len(df_para_preparar)} textos (TF-IDF)...")
         # Define parâmetros padrão que podem ser sobrescritos pelos kwargs
-        default_tfidf_params = {'stop_words': STOPWORDS_PT}
+        default_tfidf_params = {'stop_words': list(STOPWORDS_PT)}
         final_tfidf_kwargs = {**default_tfidf_params, **self._tfidf_kwargs}
         logging.debug(f"Parâmetros finais para TfidfVectorizer: {final_tfidf_kwargs}") # Movido para DEBUG
 
@@ -594,7 +595,6 @@ class ClusterFacil():
         Raises:
             KeyError: Se a coluna de classificação original não for encontrada.
             ValueError: Se a `classificacao_desejada` não existir na coluna de classificação.
-            RuntimeError: Se `preparar` não foi chamado na instância original (necessário para saber qual era a coluna de texto).
         """
         logging.info(f"Criando um novo objeto ClusterFacil para analisar o subcluster da classificação: '{classificacao_desejada}'")
 
@@ -680,3 +680,77 @@ class ClusterFacil():
         contagem = self.df[self.nome_coluna_classificacao].value_counts(dropna=inclui_na)
         logging.info(f"Contagem de textos por classificação manual na coluna '{self.nome_coluna_classificacao}':\n{contagem}")
         return None
+
+    def auto_label_cluster(self, rodada: int = None, model: str = "gpt-4.1-nano", api_key: str = None, temperature: float = 0.0, cut_limit: int = 30, random_state: int = None, final_refine: bool = True, n_examples_final: int = 10) -> dict:
+        """
+        Gera rótulos automáticos para todos os clusters de uma rodada e adiciona uma coluna com esses rótulos ao DataFrame.
+        Após a rotulação inicial, faz uma passada final no LLM para sugerir nomes finais (unificando ou ajustando rótulos se necessário).
+
+        Args:
+            rodada (int, opcional): Número da rodada de clusterização (se None, usa a última rodada).
+            model (str): Nome do modelo OpenAI (default: 'gpt-4.1-nano').
+            api_key (str, opcional): Chave da API OpenAI. Se não fornecida, busca em OPENAI_API_KEY.
+            temperature (float): Temperatura do modelo.
+            cut_limit (int, opcional): Número máximo de textos a serem enviados para o LLM por cluster. Se None, usa todos. Default=30.
+            random_state (int, opcional): Semente para amostragem aleatória dos textos. Default=None (não controla aleatoriedade).
+            final_refine (bool): Se True, faz uma passada final no LLM para refinar/unificar rótulos. Default=True.
+            n_examples_final (int): Número de exemplos de texto por cluster enviados na revisão final. Default=10.
+        Returns:
+            dict: Dicionário mapeando cluster_id para rótulo final gerado.
+        """
+        import json
+        if rodada is None:
+            rodada = self.rodada_clusterizacao - 1
+        coluna_cluster = f"{self.prefixo_cluster}{rodada}"
+        if coluna_cluster not in self.df.columns:
+            raise ValueError(f"Coluna de cluster '{coluna_cluster}' não encontrada no DataFrame.")
+        cluster_ids = self.df[coluna_cluster].dropna().unique()
+        cluster_labels = {}
+        cluster_samples = {}
+        for cluster_id in cluster_ids:
+            textos_do_cluster = self.df.loc[self.df[coluna_cluster] == cluster_id, self.coluna_textos].astype(str).tolist()
+            if not textos_do_cluster:
+                cluster_labels[cluster_id] = None
+                continue
+            # Amostragem se necessário
+            if cut_limit is not None and len(textos_do_cluster) > cut_limit:
+                import random
+                rnd = random.Random(random_state) if random_state is not None else random
+                textos_amostrados = rnd.sample(textos_do_cluster, cut_limit)
+            else:
+                textos_amostrados = textos_do_cluster
+            label = gerar_rotulo_cluster(
+                textos_amostrados,
+                model=model,
+                api_key=api_key,
+                temperature=temperature
+            )
+            cluster_labels[cluster_id] = label
+            # Amostras para revisão final
+            if n_examples_final is not None and len(textos_do_cluster) > n_examples_final:
+                import random
+                rnd = random.Random(random_state) if random_state is not None else random
+                examples = rnd.sample(textos_do_cluster, n_examples_final)
+            else:
+                examples = textos_do_cluster[:n_examples_final]
+            cluster_samples[cluster_id] = {"label": label, "examples": examples}
+        coluna_rotulo = f"{coluna_cluster}_classificacao"
+        self.df[coluna_rotulo] = self.df[coluna_cluster].map(cluster_labels)
+
+        # Passada final de refinamento global
+        if final_refine:
+            refined_labels_struct = refinar_rotulos_clusters(
+                cluster_samples=cluster_samples,
+                model=model,
+                api_key=api_key,
+                temperature=temperature
+            )
+            # Novo formato: {'clusters': [{'cluster_id': int, 'label': str}, ...]}
+            if isinstance(refined_labels_struct, dict) and "clusters" in refined_labels_struct:
+                refined_labels = {item["cluster_id"]: item["label"] for item in refined_labels_struct["clusters"]}
+            else:
+                refined_labels = refined_labels_struct
+            # Atualiza coluna de rótulos finais
+            self.df[coluna_rotulo] = self.df[coluna_cluster].map(refined_labels)
+            return refined_labels
+        return cluster_labels
