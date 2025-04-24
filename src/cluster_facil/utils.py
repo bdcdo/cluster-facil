@@ -56,7 +56,7 @@ def ajustar_rodada_inicial(colunas: pd.Index, prefixo_cluster: str) -> int:
 
 # --- Constante de Stopwords (Internalizada para Reprodutibilidade) ---
 # Lista de stopwords em português (baseada no NLTK 3.9.1)
-STOPWORDS_PT: tuple[str, ...] = (
+STOPWORDS_PT: list[str] = [ # Alterado de tuple para list
     'a', 'à', 'ao', 'aos', 'aquela', 'aquelas', 'aquele', 'aqueles', 'aquilo', 'as',
     'às', 'até', 'com', 'como', 'da', 'das', 'de', 'dela', 'delas', 'dele', 'deles',
     'depois', 'do', 'dos', 'e', 'é', 'ela', 'elas', 'ele', 'eles', 'em', 'entre',
@@ -82,7 +82,7 @@ STOPWORDS_PT: tuple[str, ...] = (
     'tivemos', 'tiver', 'tivera', 'tiveram', 'tivéramos', 'tiverem', 'tivermos',
     'tivesse', 'tivessem', 'tivéssemos', 'tu', 'tua', 'tuas', 'um', 'uma', 'você',
     'vocês', 'vos'
-)
+]
 
 # --- Funções de Carregamento de Dados ---
 def carregar_dados(
