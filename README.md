@@ -35,6 +35,10 @@ Isso realizará todo o processo: carregamento, pré-processamento, análise do c
 
 Para mais detalhes e opções, veja o exemplo completo em [`examples/uso_basico.ipynb`](examples/uso_basico.ipynb) e a documentação da API abaixo.
 
+## Comparação com scikit-learn
+
+Para entender melhor as vantagens do Cluster Fácil, preparamos uma [comparação detalhada](comparacao_sklearn.md) que mostra como a mesma tarefa exigiria mais de 60 linhas de código usando scikit-learn diretamente, versus apenas 4 linhas com nossa biblioteca.
+
 ## Como Funciona (Resumo Técnico)
 
 Clusterização é uma técnica de aprendizado não supervisionado que visa agrupar itens semelhantes. No contexto de textos, isso significa encontrar documentos que tratam de assuntos parecidos, sem saber previamente quais são esses assuntos.
