@@ -27,7 +27,7 @@ cf.clusterizar(num_clusters=5)  # Após analisar o gráfico do cotovelo gerado p
 cf.salvar()
 ```
 
-## Equivalente usando scikit-learn (mais de 60 linhas de código)
+## Equivalente usando scikit-learn (cerca de 120 linhas de código)
 
 ```python
 import pandas as pd
@@ -154,7 +154,7 @@ except ImportError:
 
 ## Principais Vantagens do Cluster Fácil
 
-1. **Significativa Redução de Código**: 4 linhas de código versus mais de 60 linhas para a mesma funcionalidade.
+1. **Significativa Redução de Código**: 5 linhas de código versus cerca de 120 linhas para a mesma funcionalidade.
 
 2. **Tratamento Automático de Erros**: O Cluster Fácil implementa dezenas de validações que evitam erros comuns:
    - Verificação da existência de colunas
