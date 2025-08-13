@@ -679,4 +679,4 @@ class ClusterFacil():
 
         contagem = self.df[self.nome_coluna_classificacao].value_counts(dropna=inclui_na)
         logging.info(f"Contagem de textos por classificação manual na coluna '{self.nome_coluna_classificacao}':\n{contagem}")
-        return None
+        return contagem

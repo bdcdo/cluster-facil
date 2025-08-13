@@ -38,15 +38,10 @@ from sklearn.cluster import KMeans
 import os
 from nltk.corpus import stopwords
 
-# Lista de stopwords em português (normalmente obtida via NLTK)
-STOPWORDS_PT = ['a', 'à', 'ao', 'aos', 'aquela', 'aquelas', 'aquele', 'aqueles', 'aquilo', 'as',
-    'às', 'até', 'com', 'como', 'da', 'das', 'de', 'dela', 'delas', 'dele', 'deles',
-    'depois', 'do', 'dos', 'e', 'é', 'ela', 'elas', 'ele', 'eles', 'em', 'entre',
-    'era', 'eram', 'éramos', 'essa', 'essas', 'esse', 'esses', 'esta', 'está',
-    'estamos', 'estão', 'estar', 'estas', 'estava', 'estavam', 'estávamos', 'este',
-    'esteja', 'estejam', 'estejamos', 'estes', 'esteve', 'estive', 'estivemos',
-    'estiver', 'estivera', 'estiveram', 'estivéramos', 'estiverem', 'estivermos',
-    'estivesse', 'estivessem', 'estivéssemos', 'estou', 'eu', 'foi', 'fomos']  # Lista truncada para exemplo
+# Baixar e configurar stopwords em português via NLTK
+import nltk
+nltk.download('stopwords', quiet=True)
+stopwords_pt = stopwords.words('portuguese')
 
 # 1. Carregamento de dados
 def carregar_dados(caminho_arquivo, aba=None):
@@ -77,7 +72,7 @@ if coluna_textos not in df.columns:
 textos_processados = df[coluna_textos].fillna('').astype(str).str.lower()
 
 # 3. Vetorização TF-IDF
-vectorizer = TfidfVectorizer(stop_words=STOPWORDS_PT)
+vectorizer = TfidfVectorizer(stop_words=stopwords_pt)
 X = vectorizer.fit_transform(textos_processados)
 
 # 4. Análise do número ideal de clusters (Método do Cotovelo)
@@ -229,6 +224,58 @@ cf.salvar()
 
 # Com scikit-learn puro: exigiria código manual para rastreamento
 ```
+
+## Exemplos Específicos para Pesquisa Jurídica
+
+O Cluster Fácil é especialmente útil para pesquisadores em direito, permitindo análises sofisticadas de grandes volumes de documentos jurídicos com simplicidade:
+
+### Análise de Decisões Judiciais por Matéria
+
+```python
+# Agrupamento de decisões do TJSP por área do direito
+cf = ClusterFacil('decisoes_tjsp_2023.xlsx')
+cf.preparar(coluna_textos='ementa')
+cf.clusterizar(num_clusters=8)
+
+# Classificação manual baseada na análise das amostras
+cf.classificar(cluster_ids=[0, 2], classificacao='Direito Civil')
+cf.classificar(cluster_ids=[1, 5], classificacao='Direito Trabalhista')
+cf.classificar(cluster_ids=[3, 7], classificacao='Direito Penal')
+cf.classificar(cluster_ids=[4, 6], classificacao='Direito Tributário')
+
+cf.salvar(formato_amostras='xlsx')  # Para análise detalhada
+```
+
+### Subcategorização de Decisões Trabalhistas
+
+```python
+# Análise detalhada dentro de uma área específica
+cf_trabalhista = cf.subcluster('Direito Trabalhista')
+cf_trabalhista.preparar(coluna_textos='ementa')
+cf_trabalhista.clusterizar(num_clusters=4)
+
+# Subcategorização por tipo de questão trabalhista
+cf_trabalhista.classificar([0], 'Rescisão Contratual')
+cf_trabalhista.classificar([1], 'Acidente de Trabalho') 
+cf_trabalhista.classificar([2], 'Horas Extras')
+cf_trabalhista.classificar([3], 'Assédio Moral')
+```
+
+### Análise Temporal de Jurisprudência
+
+```python
+# Comparação de decisões entre períodos
+cf_2022 = ClusterFacil('decisoes_2022.xlsx')
+cf_2023 = ClusterFacil('decisoes_2023.xlsx')
+
+# Mesmo processo para ambos os anos
+for cf_ano in [cf_2022, cf_2023]:
+    cf_ano.preparar(coluna_textos='ementa')
+    cf_ano.clusterizar(num_clusters=6)
+    cf_ano.salvar(formato_tudo='parquet')  # Para datasets grandes
+```
+
+Estes exemplos demonstram como pesquisadores jurídicos podem realizar análises complexas de jurisprudência, identificar padrões em decisões judiciais e categorizar grandes volumes de documentos sem necessidade de conhecimento técnico avançado em processamento de linguagem natural.
 
 ## Conclusão
 
