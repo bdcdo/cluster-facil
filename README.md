@@ -37,7 +37,7 @@ Para mais detalhes e opções, veja o exemplo completo em [`examples/uso_basico.
 
 ## Comparação com scikit-learn
 
-Para entender melhor as vantagens do Cluster Fácil, preparamos uma [comparação detalhada](comparacao_sklearn.md) que mostra como a mesma tarefa exigiria mais de 100 linhas de código usando scikit-learn diretamente, versus apenas 5 linhas com nossa biblioteca.
+Para entender melhor as vantagens do Cluster Fácil, preparamos uma [comparação detalhada](comparacao_sklearn.md) que mostra como a mesma tarefa exigiria cerca de 120 linhas de código usando scikit-learn diretamente, versus apenas 4 linhas com nossa biblioteca.
 
 ## Como Funciona (Resumo Técnico)
 

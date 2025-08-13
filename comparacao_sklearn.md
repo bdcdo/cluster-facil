@@ -154,7 +154,7 @@ except ImportError:
 
 ## Principais Vantagens do Cluster Fácil
 
-1. **Significativa Redução de Código**: 5 linhas de código versus cerca de 120 linhas para a mesma funcionalidade.
+1. **Significativa Redução de Código**: 4 linhas de código versus cerca de 120 linhas para a mesma funcionalidade.
 
 2. **Tratamento Automático de Erros**: O Cluster Fácil implementa dezenas de validações que evitam erros comuns:
    - Verificação da existência de colunas
