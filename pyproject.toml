@@ -11,7 +11,7 @@ authors = [
 description = "Uma biblioteca Python intuitiva para realizar clusterização de documentos textuais. Simplifica o processo desde a preparação dos dados e análise do número ideal de clusters (método do cotovelo) até a aplicação do algoritmo e exportação dos resultados. Ideal para agrupar grandes volumes de texto, como decisões judiciais, artigos ou comentários, de forma eficiente e com poucas linhas de código."
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",

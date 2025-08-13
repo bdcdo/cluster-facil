@@ -27,7 +27,7 @@ from cluster_facil import ClusterFacil
 cf = ClusterFacil('suaPlanilha.xlsx')
 cf.preparar(coluna_textos='nome_da_coluna_com_textos')
 # (Analise o gráfico do cotovelo que será exibido para escolher o K)
-cf.clusterizar(num_clusters=5) # Substitua 3 pelo K escolhido
+cf.clusterizar(num_clusters=5) # Substitua 5 pelo K escolhido
 cf.salvar()
 ```
 
