@@ -1,6 +1,6 @@
 # Cluster Fácil 🚀
 
-![Python Version](https://img.shields.io/badge/python-3.8+-blue.svg)
+![Python Version](https://img.shields.io/badge/python-3.10+-blue.svg)
 [![Documentation Status](https://readthedocs.org/projects/cluster-facil/badge/?version=latest)](https://cluster-facil.readthedocs.io/pt-br/latest/?badge=latest)
 
 Uma biblioteca Python intuitiva para realizar clusterização de documentos textuais. Simplifica o processo desde a preparação dos dados e análise do número ideal de clusters até a aplicação do algoritmo e exportação dos resultados. Ideal para agrupar grandes volumes de texto, como decisões judiciais, artigos ou comentários, de forma eficiente e com poucas linhas de código.
@@ -8,6 +8,11 @@ Uma biblioteca Python intuitiva para realizar clusterização de documentos text
 ## Por que Cluster Fácil?
 
 Cluster Fácil automatiza as etapas mais comuns de pré-processamento e clusterização, permitindo que você foque na análise dos resultados e na interpretação dos grupos formados. Com uma interface simples, mesmo quem está começando pode realizar análises complexas rapidamente.
+
+## Requisitos
+
+- **Python 3.10+** (compatível com Google Colab)
+- As dependências são instaladas automaticamente: pandas, scikit-learn, nltk, matplotlib, scipy, openpyxl, pyarrow, tqdm
 
 ## Instalação
 
@@ -19,7 +24,7 @@ pip install git+https://github.com/bdcdo/cluster-facil.git
 
 ## Uso Rápido (Quick Start)
 
-Clusterizar textos de uma planilha Excel (`.xlsx`) com poucas linhas de código:
+Clusterizar textos de diversos formatos (Excel `.xlsx`, CSV `.csv`, Parquet `.parquet`, JSON `.json`) com poucas linhas de código:
 
 ```python
 from cluster_facil import ClusterFacil
@@ -46,7 +51,7 @@ Clusterização é uma técnica de aprendizado não supervisionado que visa agru
 O Cluster Fácil automatiza um fluxo comum para clusterização de textos usando as seguintes etapas e algoritmos:
 
 1.  **Carregamento e Pré-processamento:**
-    *   Os dados são carregados de um arquivo (Excel, CSV, etc.) ou DataFrame.
+    *   Os dados são carregados de um arquivo (Excel `.xlsx`, CSV `.csv`, Parquet `.parquet`, JSON `.json`) ou DataFrame do pandas.
     *   Os textos da coluna especificada são convertidos para minúsculas e valores nulos são tratados para evitar erros.
 
 2.  **Vetorização TF-IDF:**
@@ -78,7 +83,7 @@ O Cluster Fácil automatiza um fluxo comum para clusterização de textos usando
 A classe `ClusterFacil` oferece os seguintes métodos principais:
 
 *   `__init__(entrada, aba=None, prefixo_cluster="cluster_", nome_coluna_classificacao="classificacao", random_state=42)`: Inicializa a classe com um DataFrame ou caminho de arquivo (`.csv`, `.xlsx`, `.parquet`, `.json`). Permite definir prefixos para colunas de cluster, nome da coluna de classificação manual e a semente para reprodutibilidade.
-*   `preparar(coluna_textos, limite_k=10, n_init=1, plotar_cotovelo=True, **tfidf_kwargs)`: Realiza o pré-processamento (TF-IDF) e calcula/plota o gráfico do método do cotovelo para ajudar a escolher K. Aceita argumentos do `TfidfVectorizer`.
+*   `preparar(coluna_textos, limite_k=10, n_init='auto', plotar_cotovelo=True, **tfidf_kwargs)`: Realiza o pré-processamento (TF-IDF) e calcula/plota o gráfico do método do cotovelo para ajudar a escolher K. Aceita argumentos do `TfidfVectorizer`.
 *   `clusterizar(num_clusters, **kmeans_kwargs)`: Executa o K-Means com o K escolhido. Em rodadas subsequentes (>1), clusteriza apenas linhas não classificadas (se a coluna de classificação existir). Aceita argumentos do `KMeans`. Retorna o nome da coluna de cluster criada (ex: `'cluster_1'`).
 *   `classificar(cluster_ids, classificacao, rodada=None)`: Atribui um rótulo (string) a um ou mais clusters de uma rodada específica na coluna de classificação.
 *   `subcluster(classificacao_desejada)`: Cria e retorna uma **nova instância** de `ClusterFacil` contendo apenas os dados de uma classificação específica, pronta para uma nova clusterização (com prefixo `'subcluster_'`).
