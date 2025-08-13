@@ -88,10 +88,9 @@ A classe `ClusterFacil` oferece os seguintes métodos principais:
 *   `classificar(cluster_ids, classificacao, rodada=None)`: Atribui um rótulo (string) a um ou mais clusters de uma rodada específica na coluna de classificação.
 *   `subcluster(classificacao_desejada)`: Cria e retorna uma **nova instância** de `ClusterFacil` contendo apenas os dados de uma classificação específica, pronta para uma nova clusterização (com prefixo `'subcluster_'`).
 *   `salvar(o_que_salvar='ambos', formato_tudo='csv', formato_amostras='xlsx', caminho_tudo=None, caminho_amostras=None, diretorio_saida=None)`: Salva o DataFrame completo e/ou amostras por cluster em diversos formatos.
-*   `finalizar(num_clusters, **kwargs_salvar)`: Método de conveniência que chama `clusterizar()` seguido por `salvar()`.
 *   `resetar()`: Remove colunas de cluster/classificação e reseta o estado da instância, permitindo recomeçar o processo no mesmo DataFrame.
 *   `listar_classificacoes()`: Retorna uma lista das classificações únicas presentes.
-*   `contar_classificacoes()`: Retorna uma Series Pandas com a contagem de cada classificação.
+*   `contar_classificacoes(inclui_na=False)`: Retorna uma Series Pandas com a contagem de cada classificação.
 *   `obter_subcluster_df(classificacao_desejada)`: Retorna um DataFrame filtrado por uma classificação, sem iniciar uma nova instância `ClusterFacil`.
 
 ## 📖 Documentação
