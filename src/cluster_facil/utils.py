@@ -85,6 +85,59 @@ STOPWORDS_PT: list[str] = [ # Alterado de tuple para list
 ]
 
 # --- Funções de Carregamento de Dados ---
+def _ler_com_fallback_encoding(
+    fn_leitura,
+    encoding_principal: str | None,
+    encodings_fallback: list[str],
+    caminho_arquivo: str
+) -> pd.DataFrame:
+    """
+    Tenta ler um arquivo com o encoding principal e, em caso de falha por
+    UnicodeDecodeError, tenta encodings alternativos automaticamente.
+
+    Isso evita que usuários precisem lidar manualmente com erros de codificação,
+    comuns em arquivos CSV gerados por Excel no Brasil/Portugal.
+
+    Args:
+        fn_leitura: Função que recebe um encoding (str) e retorna um DataFrame.
+        encoding_principal (str | None): Encoding a ser tentado primeiro.
+        encodings_fallback (list[str]): Lista de encodings alternativos para tentar.
+        caminho_arquivo (str): Caminho do arquivo (usado apenas para mensagens de log).
+
+    Returns:
+        pd.DataFrame: Os dados lidos com sucesso.
+
+    Raises:
+        UnicodeDecodeError: Se nenhum dos encodings conseguir ler o arquivo.
+    """
+    try:
+        return fn_leitura(encoding_principal)
+    except UnicodeDecodeError:
+        nome_arquivo = os.path.basename(caminho_arquivo)
+        logging.warning(
+            f"Não foi possível ler '{nome_arquivo}' com encoding '{encoding_principal}'. "
+            f"Tentando encodings alternativos: {encodings_fallback}"
+        )
+        for enc in encodings_fallback:
+            try:
+                df = fn_leitura(enc)
+                logging.info(
+                    f"Arquivo '{nome_arquivo}' lido com sucesso usando encoding alternativo '{enc}'. "
+                    f"Dica: para evitar este aviso, salve o arquivo em formato UTF-8."
+                )
+                return df
+            except UnicodeDecodeError:
+                logging.debug(f"Encoding '{enc}' também falhou para '{nome_arquivo}'.")
+                continue
+        raise UnicodeDecodeError(
+            'múltiplos', b'', 0, 1,
+            f"Não foi possível ler o arquivo '{nome_arquivo}' com nenhum dos encodings "
+            f"tentados ({encoding_principal}, {', '.join(encodings_fallback)}). "
+            f"Verifique a codificação do arquivo ou tente especificar o encoding correto "
+            f"no parâmetro 'encoding' da função carregar_dados()."
+        )
+
+
 def carregar_dados(
     caminho_arquivo: str,
     aba: str | None = None,
@@ -129,9 +182,17 @@ def carregar_dados(
 
     logging.debug(f"Parâmetros de leitura: aba='{aba}', dtype={'especificado' if dtype else 'inferido'}, encoding='{encoding}' (para CSV/JSON)") # Movido para DEBUG
 
+    # Encodings alternativos para tentar caso o encoding principal falhe.
+    # 'latin-1' (iso-8859-1) é muito comum em arquivos CSV gerados por Excel no Brasil/Portugal.
+    # 'cp1252' (Windows-1252) é outra variante comum no Windows.
+    _encodings_fallback = ['latin-1', 'cp1252']
+
     try:
         if extensao == '.csv':
-            df = pd.read_csv(caminho_arquivo, dtype=dtype, encoding=encoding)
+            df = _ler_com_fallback_encoding(
+                lambda enc: pd.read_csv(caminho_arquivo, dtype=dtype, encoding=enc),
+                encoding, _encodings_fallback, caminho_arquivo
+            )
         elif extensao == '.xlsx':
             # read_excel não usa encoding diretamente, mas usa dtype
             df = pd.read_excel(caminho_arquivo, sheet_name=aba, dtype=dtype)
@@ -140,8 +201,10 @@ def carregar_dados(
             # Para simplificar, não passamos dtype aqui, mas a opção existe se necessário.
             df = pd.read_parquet(caminho_arquivo)
         elif extensao == '.json':
-            # orient='records' é um padrão comum para JSON linha a linha ou lista de objetos
-            df = pd.read_json(caminho_arquivo, dtype=dtype, encoding=encoding, orient='records')
+            df = _ler_com_fallback_encoding(
+                lambda enc: pd.read_json(caminho_arquivo, dtype=dtype, encoding=enc, orient='records'),
+                encoding, _encodings_fallback, caminho_arquivo
+            )
 
         logging.info(f"Arquivo '{os.path.basename(caminho_arquivo)}' carregado com sucesso ({df.shape[0]} linhas, {df.shape[1]} colunas).")
         logging.debug(f"Caminho completo do arquivo carregado: {caminho_arquivo}") # DEBUG
