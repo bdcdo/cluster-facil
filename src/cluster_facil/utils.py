@@ -5,6 +5,7 @@
 import logging
 import os
 import re
+from zipfile import BadZipFile
 import pandas as pd
 from tqdm import tqdm
 from nltk.corpus import stopwords
@@ -194,8 +195,24 @@ def carregar_dados(
                 encoding, _encodings_fallback, caminho_arquivo
             )
         elif extensao == '.xlsx':
-            # read_excel não usa encoding diretamente, mas usa dtype
-            df = pd.read_excel(caminho_arquivo, sheet_name=aba, dtype=dtype)
+            try:
+                df = pd.read_excel(caminho_arquivo, sheet_name=aba, dtype=dtype)
+            except BadZipFile:
+                # Arquivo tem extensão .xlsx mas não é um Excel válido.
+                # Isso é comum quando o usuário renomeia um CSV para .xlsx.
+                nome_arquivo = os.path.basename(caminho_arquivo)
+                logging.warning(
+                    f"O arquivo '{nome_arquivo}' tem extensão .xlsx mas não é um arquivo "
+                    f"Excel válido. Tentando ler como CSV..."
+                )
+                df = _ler_com_fallback_encoding(
+                    lambda enc: pd.read_csv(caminho_arquivo, dtype=dtype, encoding=enc),
+                    encoding, _encodings_fallback, caminho_arquivo
+                )
+                logging.info(
+                    f"Arquivo '{nome_arquivo}' lido com sucesso como CSV. "
+                    f"Dica: renomeie o arquivo com a extensão .csv para evitar este aviso."
+                )
         elif extensao == '.parquet':
             # read_parquet não usa encoding; dtype pode ser inferido ou especificado via 'columns'
             # Para simplificar, não passamos dtype aqui, mas a opção existe se necessário.
