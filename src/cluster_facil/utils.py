@@ -139,6 +139,84 @@ def _ler_com_fallback_encoding(
         )
 
 
+def _ler_excel_com_fallback(
+    caminho_arquivo: str,
+    aba: str | None,
+    dtype: dict | None,
+    encoding: str | None,
+    encodings_fallback: list[str]
+) -> pd.DataFrame:
+    """
+    Tenta ler um arquivo .xlsx, primeiro com openpyxl (padrão), depois com
+    engines alternativas (calamine), e por último como CSV caso o arquivo
+    não seja um Excel válido (ex: CSV renomeado para .xlsx).
+
+    Args:
+        caminho_arquivo (str): Caminho do arquivo.
+        aba (str | None): Aba do Excel a ser lida.
+        dtype (dict | None): Tipos das colunas.
+        encoding (str | None): Encoding principal para fallback CSV.
+        encodings_fallback (list[str]): Encodings alternativos para fallback CSV.
+
+    Returns:
+        pd.DataFrame: Os dados lidos com sucesso.
+
+    Raises:
+        BadZipFile: Se o arquivo não puder ser lido como Excel nem como CSV.
+        Exception: Se todas as tentativas falharem.
+    """
+    nome_arquivo = os.path.basename(caminho_arquivo)
+
+    # Tentativa 1: engine padrão (openpyxl)
+    try:
+        return pd.read_excel(caminho_arquivo, sheet_name=aba, dtype=dtype)
+    except BadZipFile:
+        pass
+
+    # Tentativa 2: engine alternativa (calamine — baseada em Rust, lê formatos
+    # gerados por outras bibliotecas como o Polars)
+    _engines_alternativas = ['calamine']
+    for engine in _engines_alternativas:
+        try:
+            df = pd.read_excel(caminho_arquivo, sheet_name=aba, dtype=dtype, engine=engine)
+            logging.info(
+                f"Arquivo '{nome_arquivo}' lido com sucesso usando engine alternativa '{engine}'."
+            )
+            return df
+        except ImportError:
+            logging.debug(
+                f"Engine '{engine}' não disponível (biblioteca não instalada). Pulando."
+            )
+        except Exception:
+            logging.debug(
+                f"Engine '{engine}' também não conseguiu ler '{nome_arquivo}'. Pulando."
+            )
+
+    # Tentativa 3: talvez seja um CSV renomeado para .xlsx
+    logging.warning(
+        f"O arquivo '{nome_arquivo}' tem extensão .xlsx mas não pôde ser lido como "
+        f"Excel por nenhuma engine disponível. Tentando ler como CSV..."
+    )
+    try:
+        df = _ler_com_fallback_encoding(
+            lambda enc: pd.read_csv(caminho_arquivo, dtype=dtype, encoding=enc),
+            encoding, encodings_fallback, caminho_arquivo
+        )
+        logging.info(
+            f"Arquivo '{nome_arquivo}' lido com sucesso como CSV. "
+            f"Dica: renomeie o arquivo com a extensão .csv para evitar este aviso."
+        )
+        return df
+    except Exception:
+        # Se nem como CSV funcionar, re-levanta o erro original (BadZipFile)
+        raise BadZipFile(
+            f"Não foi possível ler o arquivo '{nome_arquivo}'. "
+            f"Ele tem extensão .xlsx mas não é um arquivo Excel válido, "
+            f"e também não pôde ser lido como CSV. "
+            f"Verifique se o arquivo não está corrompido."
+        )
+
+
 def carregar_dados(
     caminho_arquivo: str,
     aba: str | None = None,
@@ -195,24 +273,9 @@ def carregar_dados(
                 encoding, _encodings_fallback, caminho_arquivo
             )
         elif extensao == '.xlsx':
-            try:
-                df = pd.read_excel(caminho_arquivo, sheet_name=aba, dtype=dtype)
-            except BadZipFile:
-                # Arquivo tem extensão .xlsx mas não é um Excel válido.
-                # Isso é comum quando o usuário renomeia um CSV para .xlsx.
-                nome_arquivo = os.path.basename(caminho_arquivo)
-                logging.warning(
-                    f"O arquivo '{nome_arquivo}' tem extensão .xlsx mas não é um arquivo "
-                    f"Excel válido. Tentando ler como CSV..."
-                )
-                df = _ler_com_fallback_encoding(
-                    lambda enc: pd.read_csv(caminho_arquivo, dtype=dtype, encoding=enc),
-                    encoding, _encodings_fallback, caminho_arquivo
-                )
-                logging.info(
-                    f"Arquivo '{nome_arquivo}' lido com sucesso como CSV. "
-                    f"Dica: renomeie o arquivo com a extensão .csv para evitar este aviso."
-                )
+            df = _ler_excel_com_fallback(
+                caminho_arquivo, aba, dtype, encoding, _encodings_fallback
+            )
         elif extensao == '.parquet':
             # read_parquet não usa encoding; dtype pode ser inferido ou especificado via 'columns'
             # Para simplificar, não passamos dtype aqui, mas a opção existe se necessário.
