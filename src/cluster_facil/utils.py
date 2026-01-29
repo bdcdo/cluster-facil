@@ -139,6 +139,52 @@ def _ler_com_fallback_encoding(
         )
 
 
+def _ler_csv_com_fallback(
+    caminho_arquivo: str,
+    dtype: dict | None,
+    encoding: str | None,
+    encodings_fallback: list[str]
+) -> pd.DataFrame:
+    """
+    Tenta ler um CSV com fallback de encoding e de engine do parser.
+
+    Quando o parser C do Pandas falha com ParserError (ex: campos com quebras
+    de linha mal formatadas, EOF dentro de string), tenta novamente com o
+    parser Python, que é mais tolerante.
+
+    Args:
+        caminho_arquivo (str): Caminho do arquivo CSV.
+        dtype (dict | None): Tipos das colunas.
+        encoding (str | None): Encoding principal.
+        encodings_fallback (list[str]): Encodings alternativos.
+
+    Returns:
+        pd.DataFrame: Os dados lidos com sucesso.
+    """
+    try:
+        return _ler_com_fallback_encoding(
+            lambda enc: pd.read_csv(caminho_arquivo, dtype=dtype, encoding=enc),
+            encoding, encodings_fallback, caminho_arquivo
+        )
+    except pd.errors.ParserError:
+        nome_arquivo = os.path.basename(caminho_arquivo)
+        logging.warning(
+            f"O parser padrão (C) não conseguiu ler '{nome_arquivo}'. "
+            f"Tentando com o parser Python (mais tolerante com formatação irregular)..."
+        )
+        df = _ler_com_fallback_encoding(
+            lambda enc: pd.read_csv(
+                caminho_arquivo, dtype=dtype, encoding=enc, engine='python'
+            ),
+            encoding, encodings_fallback, caminho_arquivo
+        )
+        logging.info(
+            f"Arquivo '{nome_arquivo}' lido com sucesso usando o parser Python. "
+            f"Dica: o arquivo pode conter campos com quebras de linha ou formatação irregular."
+        )
+        return df
+
+
 def _ler_excel_com_fallback(
     caminho_arquivo: str,
     aba: str | None,
@@ -268,9 +314,8 @@ def carregar_dados(
 
     try:
         if extensao == '.csv':
-            df = _ler_com_fallback_encoding(
-                lambda enc: pd.read_csv(caminho_arquivo, dtype=dtype, encoding=enc),
-                encoding, _encodings_fallback, caminho_arquivo
+            df = _ler_csv_com_fallback(
+                caminho_arquivo, dtype, encoding, _encodings_fallback
             )
         elif extensao == '.xlsx':
             df = _ler_excel_com_fallback(
