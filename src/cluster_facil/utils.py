@@ -213,9 +213,13 @@ def _ler_excel_com_fallback(
     """
     nome_arquivo = os.path.basename(caminho_arquivo)
 
+    # sheet_name=None no pandas significa "todas as abas" (retorna dict).
+    # Quando o usuário não especifica aba, queremos a primeira (índice 0).
+    sheet = aba if aba is not None else 0
+
     # Tentativa 1: engine padrão (openpyxl)
     try:
-        return pd.read_excel(caminho_arquivo, sheet_name=aba, dtype=dtype)
+        return pd.read_excel(caminho_arquivo, sheet_name=sheet, dtype=dtype)
     except BadZipFile:
         pass
 
@@ -224,7 +228,7 @@ def _ler_excel_com_fallback(
     _engines_alternativas = ['calamine']
     for engine in _engines_alternativas:
         try:
-            df = pd.read_excel(caminho_arquivo, sheet_name=aba, dtype=dtype, engine=engine)
+            df = pd.read_excel(caminho_arquivo, sheet_name=sheet, dtype=dtype, engine=engine)
             logging.info(
                 f"Arquivo '{nome_arquivo}' lido com sucesso usando engine alternativa '{engine}'."
             )
