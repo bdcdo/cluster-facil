@@ -5,6 +5,7 @@
 import logging
 import os
 import re
+from zipfile import BadZipFile
 import pandas as pd
 from tqdm import tqdm
 from nltk.corpus import stopwords
@@ -85,6 +86,137 @@ STOPWORDS_PT: list[str] = [ # Alterado de tuple para list
 ]
 
 # --- Funções de Carregamento de Dados ---
+def _ler_com_fallback_encoding(
+    fn_leitura,
+    encoding_principal: str | None,
+    encodings_fallback: list[str],
+    caminho_arquivo: str
+) -> pd.DataFrame:
+    """
+    Tenta ler um arquivo com o encoding principal e, em caso de falha por
+    UnicodeDecodeError, tenta encodings alternativos automaticamente.
+
+    Isso evita que usuários precisem lidar manualmente com erros de codificação,
+    comuns em arquivos CSV gerados por Excel no Brasil/Portugal.
+
+    Args:
+        fn_leitura: Função que recebe um encoding (str) e retorna um DataFrame.
+        encoding_principal (str | None): Encoding a ser tentado primeiro.
+        encodings_fallback (list[str]): Lista de encodings alternativos para tentar.
+        caminho_arquivo (str): Caminho do arquivo (usado apenas para mensagens de log).
+
+    Returns:
+        pd.DataFrame: Os dados lidos com sucesso.
+
+    Raises:
+        UnicodeDecodeError: Se nenhum dos encodings conseguir ler o arquivo.
+    """
+    try:
+        return fn_leitura(encoding_principal)
+    except UnicodeDecodeError:
+        nome_arquivo = os.path.basename(caminho_arquivo)
+        logging.warning(
+            f"Não foi possível ler '{nome_arquivo}' com encoding '{encoding_principal}'. "
+            f"Tentando encodings alternativos: {encodings_fallback}"
+        )
+        for enc in encodings_fallback:
+            try:
+                df = fn_leitura(enc)
+                logging.info(
+                    f"Arquivo '{nome_arquivo}' lido com sucesso usando encoding alternativo '{enc}'. "
+                    f"Dica: para evitar este aviso, salve o arquivo em formato UTF-8."
+                )
+                return df
+            except UnicodeDecodeError:
+                logging.debug(f"Encoding '{enc}' também falhou para '{nome_arquivo}'.")
+                continue
+        raise UnicodeDecodeError(
+            'múltiplos', b'', 0, 1,
+            f"Não foi possível ler o arquivo '{nome_arquivo}' com nenhum dos encodings "
+            f"tentados ({encoding_principal}, {', '.join(encodings_fallback)}). "
+            f"Verifique a codificação do arquivo ou tente especificar o encoding correto "
+            f"no parâmetro 'encoding' da função carregar_dados()."
+        )
+
+
+def _ler_excel_com_fallback(
+    caminho_arquivo: str,
+    aba: str | None,
+    dtype: dict | None,
+    encoding: str | None,
+    encodings_fallback: list[str]
+) -> pd.DataFrame:
+    """
+    Tenta ler um arquivo .xlsx, primeiro com openpyxl (padrão), depois com
+    engines alternativas (calamine), e por último como CSV caso o arquivo
+    não seja um Excel válido (ex: CSV renomeado para .xlsx).
+
+    Args:
+        caminho_arquivo (str): Caminho do arquivo.
+        aba (str | None): Aba do Excel a ser lida.
+        dtype (dict | None): Tipos das colunas.
+        encoding (str | None): Encoding principal para fallback CSV.
+        encodings_fallback (list[str]): Encodings alternativos para fallback CSV.
+
+    Returns:
+        pd.DataFrame: Os dados lidos com sucesso.
+
+    Raises:
+        BadZipFile: Se o arquivo não puder ser lido como Excel nem como CSV.
+        Exception: Se todas as tentativas falharem.
+    """
+    nome_arquivo = os.path.basename(caminho_arquivo)
+
+    # Tentativa 1: engine padrão (openpyxl)
+    try:
+        return pd.read_excel(caminho_arquivo, sheet_name=aba, dtype=dtype)
+    except BadZipFile:
+        pass
+
+    # Tentativa 2: engine alternativa (calamine — baseada em Rust, lê formatos
+    # gerados por outras bibliotecas como o Polars)
+    _engines_alternativas = ['calamine']
+    for engine in _engines_alternativas:
+        try:
+            df = pd.read_excel(caminho_arquivo, sheet_name=aba, dtype=dtype, engine=engine)
+            logging.info(
+                f"Arquivo '{nome_arquivo}' lido com sucesso usando engine alternativa '{engine}'."
+            )
+            return df
+        except ImportError:
+            logging.debug(
+                f"Engine '{engine}' não disponível (biblioteca não instalada). Pulando."
+            )
+        except Exception:
+            logging.debug(
+                f"Engine '{engine}' também não conseguiu ler '{nome_arquivo}'. Pulando."
+            )
+
+    # Tentativa 3: talvez seja um CSV renomeado para .xlsx
+    logging.warning(
+        f"O arquivo '{nome_arquivo}' tem extensão .xlsx mas não pôde ser lido como "
+        f"Excel por nenhuma engine disponível. Tentando ler como CSV..."
+    )
+    try:
+        df = _ler_com_fallback_encoding(
+            lambda enc: pd.read_csv(caminho_arquivo, dtype=dtype, encoding=enc),
+            encoding, encodings_fallback, caminho_arquivo
+        )
+        logging.info(
+            f"Arquivo '{nome_arquivo}' lido com sucesso como CSV. "
+            f"Dica: renomeie o arquivo com a extensão .csv para evitar este aviso."
+        )
+        return df
+    except Exception:
+        # Se nem como CSV funcionar, re-levanta o erro original (BadZipFile)
+        raise BadZipFile(
+            f"Não foi possível ler o arquivo '{nome_arquivo}'. "
+            f"Ele tem extensão .xlsx mas não é um arquivo Excel válido, "
+            f"e também não pôde ser lido como CSV. "
+            f"Verifique se o arquivo não está corrompido."
+        )
+
+
 def carregar_dados(
     caminho_arquivo: str,
     aba: str | None = None,
@@ -129,19 +261,30 @@ def carregar_dados(
 
     logging.debug(f"Parâmetros de leitura: aba='{aba}', dtype={'especificado' if dtype else 'inferido'}, encoding='{encoding}' (para CSV/JSON)") # Movido para DEBUG
 
+    # Encodings alternativos para tentar caso o encoding principal falhe.
+    # 'latin-1' (iso-8859-1) é muito comum em arquivos CSV gerados por Excel no Brasil/Portugal.
+    # 'cp1252' (Windows-1252) é outra variante comum no Windows.
+    _encodings_fallback = ['latin-1', 'cp1252']
+
     try:
         if extensao == '.csv':
-            df = pd.read_csv(caminho_arquivo, dtype=dtype, encoding=encoding)
+            df = _ler_com_fallback_encoding(
+                lambda enc: pd.read_csv(caminho_arquivo, dtype=dtype, encoding=enc),
+                encoding, _encodings_fallback, caminho_arquivo
+            )
         elif extensao == '.xlsx':
-            # read_excel não usa encoding diretamente, mas usa dtype
-            df = pd.read_excel(caminho_arquivo, sheet_name=aba, dtype=dtype)
+            df = _ler_excel_com_fallback(
+                caminho_arquivo, aba, dtype, encoding, _encodings_fallback
+            )
         elif extensao == '.parquet':
             # read_parquet não usa encoding; dtype pode ser inferido ou especificado via 'columns'
             # Para simplificar, não passamos dtype aqui, mas a opção existe se necessário.
             df = pd.read_parquet(caminho_arquivo)
         elif extensao == '.json':
-            # orient='records' é um padrão comum para JSON linha a linha ou lista de objetos
-            df = pd.read_json(caminho_arquivo, dtype=dtype, encoding=encoding, orient='records')
+            df = _ler_com_fallback_encoding(
+                lambda enc: pd.read_json(caminho_arquivo, dtype=dtype, encoding=enc, orient='records'),
+                encoding, _encodings_fallback, caminho_arquivo
+            )
 
         logging.info(f"Arquivo '{os.path.basename(caminho_arquivo)}' carregado com sucesso ({df.shape[0]} linhas, {df.shape[1]} colunas).")
         logging.debug(f"Caminho completo do arquivo carregado: {caminho_arquivo}") # DEBUG

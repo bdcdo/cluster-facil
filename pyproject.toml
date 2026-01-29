@@ -29,6 +29,7 @@ dependencies = [
     "matplotlib==3.10.1",
     "scipy==1.15.2",
     "openpyxl==3.1.5",
+    "python-calamine>=0.2.0",
     "pyarrow==19.0.1",
     "tqdm"
 ]
